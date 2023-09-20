@@ -7,8 +7,10 @@ import numpy as np
 import torch
 
 from ultralytics.data import build_dataloader, build_yolo_dataset
+from ultralytics.data.dataset import MultiModalDataset
+from ultralytics.data.utils import check_det_rgb_ir_dataset
 from ultralytics.engine.validator import BaseValidator
-from ultralytics.utils import DEFAULT_CFG, LOGGER, ops
+from ultralytics.utils import DEFAULT_CFG, LOGGER, ops, colorstr
 from ultralytics.utils.checks import check_requirements
 from ultralytics.utils.metrics import ConfusionMatrix, DetMetrics, box_iou
 from ultralytics.utils.plotting import output_to_target, plot_images
@@ -273,4 +275,26 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 
 
 if __name__ == '__main__':
-    val()
+    # val(use_python=True)
+    path_rgb = 'E:\\LLVIP\\train-visible.txt'
+    path_ir = 'E:\\LLVIP\\train-infrared.txt'
+    cfg = DEFAULT_CFG
+
+    dataset = MultiModalDataset(rgb_path=path_rgb, ir_path=path_ir,
+                                imgsz=cfg.imgsz,
+                                batch_size=cfg.batch,
+                                augment=cfg.mode == 'train',  # augmentation
+                                hyp=cfg,  # TODO: probably add a get_hyps_from_cfg function
+                                rect=cfg.rect,
+                                cache=cfg.cache or None,
+                                single_cls=cfg.single_cls or False,
+                                stride=32,
+                                pad=0.0 if cfg.mode == 'train' else 0.5,
+                                prefix=colorstr(f'{cfg.mode}: '),
+                                use_segments=cfg.task == 'segment',
+                                use_keypoints=cfg.task == 'pose',
+                                classes=cfg.classes,
+                                data=check_det_rgb_ir_dataset('../../../cfg/datasets/LLVIP.yaml'),
+                                fraction=cfg.fraction if cfg.mode == 'train' else 1.0, )
+    labels = dataset[0]
+    print(labels)

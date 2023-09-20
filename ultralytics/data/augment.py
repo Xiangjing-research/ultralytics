@@ -536,6 +536,151 @@ class RandomFlip:
         return labels
 
 
+class LetterBox_RGB_IR:
+    """Resize image and padding for detection, instance segmentation, pose."""
+
+    def __init__(self, new_shape=(640, 640), auto=False, scaleFill=False, scaleup=True, center=True, stride=32):
+        """Initialize LetterBox object with specific parameters."""
+        self.new_shape = new_shape
+        self.auto = auto
+        self.scaleFill = scaleFill
+        self.scaleup = scaleup
+        self.stride = stride
+        self.center = center  # Put the image in the middle or top-left
+
+    def __call__(self, labels=None, image=None):
+        """Return updated labels and image with added border."""
+        if labels is None:
+            labels = {}
+        rgb_img = labels.get('rgb_img') if image is None else image
+        ir_img = labels.get('ir_img') if image is None else image
+        shape = rgb_img.shape[:2]  # current shape [height, width]
+        new_shape = labels.pop('rect_shape', self.new_shape)
+        if isinstance(new_shape, int):
+            new_shape = (new_shape, new_shape)
+
+        # Scale ratio (new / old)
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        if not self.scaleup:  # only scale down, do not scale up (for better val mAP)
+            r = min(r, 1.0)
+
+        # Compute padding
+        ratio = r, r  # width, height ratios
+        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+        if self.auto:  # minimum rectangle
+            dw, dh = np.mod(dw, self.stride), np.mod(dh, self.stride)  # wh padding
+        elif self.scaleFill:  # stretch
+            dw, dh = 0.0, 0.0
+            new_unpad = (new_shape[1], new_shape[0])
+            ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
+
+        if self.center:
+            dw /= 2  # divide padding into 2 sides
+            dh /= 2
+        if labels.get('ratio_pad'):
+            labels['ratio_pad'] = (labels['ratio_pad'], (dw, dh))  # for evaluation
+
+        if shape[::-1] != new_unpad:  # resize
+            rgb_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            ir_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+        top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
+        rgb_img = cv2.copyMakeBorder(rgb_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                     value=(114, 114, 114))  # add border
+        ir_img = cv2.copyMakeBorder(ir_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                    value=(114, 114, 114))  # add border
+        if len(labels):
+            labels = self._update_labels(labels, ratio, dw, dh)
+            labels['rgb_img'] = rgb_img
+            labels['ir_img'] = ir_img
+            labels['resized_shape'] = new_shape
+            return labels
+        else:
+            return rgb_img, ir_img
+
+    def _update_labels(self, labels, ratio, padw, padh):
+        """Update labels."""
+        labels['instances'].convert_bbox(format='xyxy')
+        labels['instances'].denormalize(*labels['rgb_img'].shape[:2][::-1])
+        labels['instances'].scale(*ratio)
+        labels['instances'].add_padding(padw, padh)
+        return labels
+
+
+class Format_RGB_IR:
+
+    def __init__(self,
+                 bbox_format='xywh',
+                 normalize=True,
+                 return_mask=False,
+                 return_keypoint=False,
+                 mask_ratio=4,
+                 mask_overlap=True,
+                 batch_idx=True):
+        self.bbox_format = bbox_format
+        self.normalize = normalize
+        self.return_mask = return_mask  # set False when training detection only
+        self.return_keypoint = return_keypoint
+        self.mask_ratio = mask_ratio
+        self.mask_overlap = mask_overlap
+        self.batch_idx = batch_idx  # keep the batch indexes
+
+    def __call__(self, labels):
+        """Return formatted image, classes, bounding boxes & keypoints to be used by 'collate_fn'."""
+        rgb_img = labels.pop('rgb_img')
+        ir_img = labels.pop('ir_img')
+        h, w = rgb_img.shape[:2]
+        cls = labels.pop('cls')
+        instances = labels.pop('instances')
+        instances.convert_bbox(format=self.bbox_format)
+        instances.denormalize(w, h)
+        nl = len(instances)
+
+        if self.return_mask:
+            if nl:
+                masks, instances, cls = self._format_segments(instances, cls, w, h)
+                masks = torch.from_numpy(masks)
+            else:
+                masks = torch.zeros(1 if self.mask_overlap else nl, rgb_img.shape[0] // self.mask_ratio,
+                                    rgb_img.shape[1] // self.mask_ratio)
+            labels['masks'] = masks
+        if self.normalize:
+            instances.normalize(w, h)
+        labels['rgb_img'] = self._format_img(rgb_img)
+        labels['ir_img'] = self._format_img(ir_img)
+        labels['cls'] = torch.from_numpy(cls) if nl else torch.zeros(nl)
+        labels['bboxes'] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
+        if self.return_keypoint:
+            labels['keypoints'] = torch.from_numpy(instances.keypoints)
+        # Then we can use collate_fn
+        if self.batch_idx:
+            labels['batch_idx'] = torch.zeros(nl)
+        return labels
+
+    def _format_img(self, img):
+        """Format the image for YOLOv5 from Numpy array to PyTorch tensor."""
+        if len(img.shape) < 3:
+            img = np.expand_dims(img, -1)
+        img = np.ascontiguousarray(img.transpose(2, 0, 1)[::-1])
+        img = torch.from_numpy(img)
+        return img
+
+    def _format_segments(self, instances, cls, w, h):
+        """convert polygon points to bitmap."""
+        segments = instances.segments
+        if self.mask_overlap:
+            masks, sorted_idx = polygons2masks_overlap((h, w), segments, downsample_ratio=self.mask_ratio)
+            masks = masks[None]  # (640, 640) -> (1, 640, 640)
+            instances = instances[sorted_idx]
+            cls = cls[sorted_idx]
+        else:
+            masks = polygons2masks((h, w), segments, color=1, downsample_ratio=self.mask_ratio)
+
+        return masks, instances, cls
+
+
 class LetterBox:
     """Resize image and padding for detection, instance segmentation, pose."""
 

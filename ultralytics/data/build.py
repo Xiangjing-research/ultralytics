@@ -68,6 +68,10 @@ def seed_worker(worker_id):  # noqa
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+# def build_multimodal_dataset(cfg,rgb_path,ir_path,batch,data, mode='train', rect=False, stride=32):
+
+
+
 
 def build_yolo_dataset(cfg, img_path, batch, data, mode='train', rect=False, stride=32):
     """Build YOLO Dataset"""
