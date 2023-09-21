@@ -633,7 +633,7 @@ def check_det_rgb_ir_dataset(dataset, autodownload=True):
         data = yaml_load(data, append_filename=True)  # dictionary
 
     # Checks
-    for k in ['train_rgb', 'val_rgb', 'train_ir', 'val_ir']:
+    for k in ['train-MultiModal', 'val-MultiModal']:
         if k not in data:
             raise SyntaxError(
                 emojis(f"{dataset} '{k}:' key missing ❌.\n'train' and 'val' are required in all data YAMLs."))
@@ -654,7 +654,7 @@ def check_det_rgb_ir_dataset(dataset, autodownload=True):
     if not path.is_absolute():
         path = (DATASETS_DIR / path).resolve()
     data['path'] = path  # download scripts
-    for k in ['train_rgb', 'val_rgb', 'train_ir', 'val_ir']:
+    for k in ['train-MultiModal', 'val-MultiModal']:
         if data.get(k):  # prepend path
             if isinstance(data[k], str):
                 x = (path / data[k]).resolve()
@@ -665,7 +665,7 @@ def check_det_rgb_ir_dataset(dataset, autodownload=True):
                 data[k] = [str((path / x).resolve()) for x in data[k]]
 
     # Parse yaml
-    train, val, test, s = (data.get(x) for x in ['train_rgb', 'val_rgb', 'train_ir', 'val_ir'])
+    train, val, test, s = (data.get(x) for x in ['train-MultiModal', 'val-MultiModal', 'test', 'download'])
     if val:
         val = [Path(x).resolve() for x in (val if isinstance(val, list) else [val])]  # val path
         if not all(x.exists() for x in val):
