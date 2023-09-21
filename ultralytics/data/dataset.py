@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr, is_dir_writeable
+from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr, is_dir_writeable, TQDM_BAR_FORMAT
 
 from .augment import Compose, Format, Instances, LetterBox, classify_albumentations, classify_transforms, v8_transforms, \
     LetterBox_RGB_IR, Format_RGB_IR
@@ -408,246 +408,6 @@ class MultiModalDataset(Dataset):  # for training/testing
         # Transforms
         self.transforms = self.build_transforms(hyp=hyp)
 
-    # def __init__(self, rgb_path, ir_path, *args, data=None, use_segments=False, use_keypoints=False, **kwargs):
-    #
-    #     super().__init__(img_path='', *args, **kwargs)
-    #     self.rgb_path = rgb_path
-    #     self.path_ir = ir_path
-    #     try:
-    #         f_rgb = []  # image files
-    #         f_ir = []
-    #         # -----------------------------  rgb   -----------------------------
-    #         for p_rgb in rgb_path if isinstance(rgb_path, list) else [rgb_path]:
-    #             p_rgb = Path(p_rgb)  # os-agnostic
-    #             if p_rgb.is_dir():  # dir
-    #                 f_rgb += glob.glob(str(p_rgb / '**' / '*.*'), recursive=True)
-    #                 # f = list(p.rglob('**/*.*'))  # pathlib
-    #             elif p_rgb.is_file():  # file
-    #                 with open(p_rgb, 'r') as t:
-    #                     t = t.read().strip().splitlines()
-    #                     parent = str(p_rgb.parent) + os.sep
-    #                     f_rgb += [x.replace('./', parent) if x.startswith('./') else x for x in
-    #                               t]  # local to global path
-    #                     # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
-    #             else:
-    #                 raise Exception(f'{self.prefix}{rgb_path} does not exist')
-    #
-    #             # -----------------------------  ir   -----------------------------
-    #             for p_ir in ir_path if isinstance(ir_path, list) else [ir_path]:
-    #                 p_ir = Path(p_ir)  # os-agnostic
-    #                 if p_ir.is_dir():  # dir
-    #                     f_ir += glob.glob(str(p_ir / '**' / '*.*'), recursive=True)
-    #                     # f = list(p.rglob('**/*.*'))  # pathlib
-    #                 elif p_ir.is_file():  # file
-    #                     with open(p_ir, 'r') as t:
-    #                         t = t.read().strip().splitlines()
-    #                         parent = str(p_ir.parent) + os.sep
-    #                         f_ir += [x.replace('./', parent) if x.startswith('./') else x for x in
-    #                                  t]  # local to global path
-    #                         # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
-    #                 else:
-    #                     raise Exception(f'{self.prefix}{p_ir} does not exist')
-    #
-    #         self.img_files_rgb = sorted(
-    #             [x.replace('/', os.sep) for x in f_rgb if x.split('.')[-1].lower() in self.IMG_FORMATS])
-    #         self.img_files_ir = sorted(
-    #             [x.replace('/', os.sep) for x in f_ir if x.split('.')[-1].lower() in self.IMG_FORMATS])
-    #
-    #         # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
-    #         assert (self.img_files_rgb, self.img_files_ir), (
-    #             f'{self.prefix}No images found', f'{self.prefix}No images found')
-    #     except Exception as e:
-    #         raise Exception(f'{self.prefix}Error loading data from {rgb_path, ir_path}: {e}\nSee {HELP_URL}')
-    #
-    #     # Check cache
-    #     # Check rgb cache
-    #     self.label_files_rgb = img2label_paths(self.img_files_rgb)  # labels
-    #     # print(self.label_files)
-    #     cache_rgb_path = (p_rgb if p_rgb.is_file() else Path(self.label_files_rgb[0]).parent).with_suffix(
-    #         '.cache')  # cached labels
-    #     if cache_rgb_path.is_file():
-    #         cache_rgb, exists_rgb = torch.load(cache_rgb_path), True  # load
-    #         if cache_rgb['hash'] != get_hash(
-    #                 self.label_files_rgb + self.img_files_rgb) or 'version' not in cache_rgb:  # changed
-    #             cache_rgb, exists_rgb = self.cache_labels(cache_rgb_path), False  # re-cache
-    #     else:
-    #         cache_rgb, exists_rgb = self.cache_labels(cache_rgb_path), False  # cache
-    #
-    #     # Check ir cache
-    #     self.label_files_ir = img2label_paths(self.img_files_ir)  # labels
-    #     # print(self.label_files)
-    #     cache_ir_path = (p_ir if p_ir.is_file() else Path(self.label_files_ir[0]).parent).with_suffix(
-    #         '.cache')  # cached labels
-    #     if cache_ir_path.is_file():
-    #         cache_ir, exists_ir = torch.load(cache_ir_path), True  # load
-    #         if cache_ir['hash'] != get_hash(
-    #                 self.label_files_ir + self.img_files_ir) or 'version' not in cache_ir:  # changed
-    #             cache_ir, exists_ir = self.cache_labels(self.img_files_ir, self.label_files_ir,
-    #                                                     cache_ir_path, self.prefix), False  # re-cache
-    #     else:
-    #         cache_ir, exists_ir = self.cache_labels(self.img_files_ir, self.label_files_ir,
-    #                                                 cache_ir_path, self.prefix), False  # cache
-    #
-    #     # Display cache
-    #     nf_rgb, nm_rgb, ne_rgb, nc_rgb, n_rgb = cache_rgb.pop('results')  # found, missing, empty, corrupted, total
-    #     nf_ir, nm_ir, ne_ir, nc_ir, n_ir = cache_ir.pop('results')  # found, missing, empty, corrupted, total
-    #     if exists_rgb:
-    #         d = f"Scanning RGB '{cache_rgb_path}' images and labels... {nf_rgb} found, {nm_rgb} missing, {ne_rgb} empty, {nc_rgb} corrupted"
-    #         tqdm(None, desc=self.prefix + d, total=n_rgb, initial=n_rgb)  # display cache results
-    #     if exists_ir:
-    #         d = f"Scanning IR '{cache_rgb_path}' images and labels... {nf_ir} found, {nm_ir} missing, {ne_ir} empty, {nc_ir} corrupted"
-    #         tqdm(None, desc=self.prefix + d, total=n_ir, initial=n_ir)  # display cache results
-    #
-    #     assert nf_rgb > 0 or not self.augment, f'{self.prefix}No labels in {cache_rgb_path}. Can not train without labels. See {HELP_URL}'
-    #
-    #     # Read cache
-    #     # Read RGB cache
-    #     cache_rgb.pop('hash')  # remove hash
-    #     cache_rgb.pop('version')  # remove version
-    #     labels_rgb, shapes_rgb, self.segments_rgb = zip(*cache_rgb.values())
-    #     self.labels_rgb = list(labels_rgb)
-    #     self.shapes_rgb = np.array(shapes_rgb, dtype=np.float64)
-    #     self.img_files_rgb = list(cache_rgb.keys())  # update
-    #     self.label_files_rgb = img2label_paths(cache_rgb.keys())  # update
-    #     if self.single_cls:
-    #         for x in self.labels_rgb:
-    #             x[:, 0] = 0
-    #
-    #     n_rgb = len(shapes_rgb)  # number of images
-    #     bi_rgb = np.floor(np.arange(n_rgb) / self.batch_size).astype(np.int)  # batch index
-    #     nb_rgb = bi_rgb[-1] + 1  # number of batches
-    #     self.batch_rgb = bi_rgb  # batch index of image
-    #     self.n_rgb = n_rgb
-    #     self.indices_rgb = range(n_rgb)
-    #
-    #     # Read IR cache
-    #     cache_ir.pop('hash')  # remove hash
-    #     cache_ir.pop('version')  # remove version
-    #     labels_ir, shapes_ir, self.segments_ir = zip(*cache_ir.values())
-    #     self.labels_ir = list(labels_ir)
-    #     self.shapes_ir = np.array(shapes_ir, dtype=np.float64)
-    #     self.img_files_ir = list(cache_ir.keys())  # update
-    #     self.label_files_ir = img2label_paths(cache_ir.keys())  # update
-    #     if self.single_cls:
-    #         for x in self.labels_ir:
-    #             x[:, 0] = 0
-    #
-    #     n_ir = len(shapes_ir)  # number of images
-    #     bi_ir = np.floor(np.arange(n_ir) / self.batch_size).astype(np.int)  # batch index
-    #     nb_ir = bi_ir[-1] + 1  # number of batches
-    #     self.batch_ir = bi_ir  # batch index of image
-    #     self.n_ir = n_ir
-    #     self.indices_ir = range(n_ir)
-    #
-    #     # print( "self.img_files_rgb,  self.img_files_ir")
-    #     # print( self.img_files_rgb,  self.img_files_ir)
-    #
-    #     # # Rectangular Training
-    #     # if self.rect:
-    #     #     # Sort by aspect ratio
-    #     #     s = self.shapes  # wh
-    #     #     ar = s[:, 1] / s[:, 0]  # aspect ratio
-    #     #     irect = ar.argsort()
-    #     #     self.img_files = [self.img_files[i] for i in irect]
-    #     #     self.label_files = [self.label_files[i] for i in irect]
-    #     #     self.labels = [self.labels[i] for i in irect]
-    #     #     self.shapes = s[irect]  # wh
-    #     #     ar = ar[irect]
-    #     #
-    #     #     # Set training image shapes
-    #     #     shapes = [[1, 1]] * nb
-    #     #     for i in range(nb):
-    #     #         ari = ar[bi == i]
-    #     #         mini, maxi = ari.min(), ari.max()
-    #     #         if maxi < 1:
-    #     #             shapes[i] = [maxi, 1]
-    #     #         elif mini > 1:
-    #     #             shapes[i] = [1, 1 / mini]
-    #     #
-    #     #     self.batch_shapes = np.ceil(np.array(shapes) * img_size / stride + pad).astype(np.int) * stride
-    #
-    #     # Rectangular Training
-    #     if self.rect:
-    #
-    #         # RGB
-    #         # Sort by aspect ratio
-    #         s_rgb = self.shapes_rgb  # wh
-    #         ar_rgb = s_rgb[:, 1] / s_rgb[:, 0]  # aspect ratio
-    #         irect_rgb = ar_rgb.argsort()
-    #         self.img_files_rgb = [self.img_files_rgb[i] for i in irect_rgb]
-    #         self.label_files_rgb = [self.label_files_rgb[i] for i in irect_rgb]
-    #         self.labels_rgb = [self.labels_rgb[i] for i in irect_rgb]
-    #         self.shapes_rgb = s_rgb[irect_rgb]  # wh
-    #         ar_rgb = ar_rgb[irect_rgb]
-    #
-    #         # Set training image shapes
-    #         shapes_rgb = [[1, 1]] * nb_rgb
-    #         for i in range(nb_rgb):
-    #             ari_rgb = ar_rgb[bi_rgb == i]
-    #             mini, maxi = ari_rgb.min(), ari_rgb.max()
-    #             if maxi < 1:
-    #                 shapes_rgb[i] = [maxi, 1]
-    #             elif mini > 1:
-    #                 shapes_rgb[i] = [1, 1 / mini]
-    #
-    #         self.batch_shapes_rgb = np.ceil(np.array(shapes_rgb) * self.img_size / self.stride + self.pad).astype(
-    #             np.int) * self.stride
-    #
-    #         # IR
-    #         # Sort by aspect ratio
-    #         s_ir = self.shapes_ir  # wh
-    #         ar_ir = s_ir[:, 1] / s_ir[:, 0]  # aspect ratio
-    #         irect_ir = ar_ir.argsort()
-    #         self.img_files_ir = [self.img_files_ir[i] for i in irect_ir]
-    #         self.label_files_ir = [self.label_files_ir[i] for i in irect_ir]
-    #         self.labels_ir = [self.labels_ir[i] for i in irect_ir]
-    #         self.shapes_ir = s_ir[irect_ir]  # wh
-    #         ar_ir = ar_ir[irect_ir]
-    #
-    #         # Set training image shapes
-    #         shapes_ir = [[1, 1]] * nb_ir
-    #         for i in range(nb_ir):
-    #             ari_ir = ar_ir[bi_ir == i]
-    #             mini, maxi = ari_ir.min(), ari_ir.max()
-    #             if maxi < 1:
-    #                 shapes_ir[i] = [maxi, 1]
-    #             elif mini > 1:
-    #                 shapes_ir[i] = [1, 1 / mini]
-    #
-    #         self.batch_shapes_ir = np.ceil(np.array(shapes_ir) * self.img_size / self.stride + self.pad).astype(
-    #             np.int) * self.stride
-    #
-    #     # Cache images into memory for faster training (WARNING: large datasets may exceed system RAM)
-    #     self.imgs_rgb = [None] * n_rgb
-    #     self.imgs_ir = [None] * n_ir
-    #
-    #     # if cache_images:
-    #     #     # RGB
-    #     #     gb_rgb = 0  # Gigabytes of cached images
-    #     #     self.img_hw0_rgb, self.img_hw_rgb = [None] * n_rgb, [None] * n_rgb
-    #     #     results_rgb = ThreadPool(8).imap(lambda x: load_image(*x), zip(repeat(self), range(n_rgb)))  # 8 threads
-    #     #     pbar_rgb = tqdm(enumerate(results_rgb), total=n_rgb)
-    #     #     for i, x in pbar_rgb:
-    #     #         self.imgs_rgb[i], self.img_hw0_rgb[i], self.img_hw_rgb[i] = x  # img, hw_original, hw_resized = load_image(self, i)
-    #     #         gb_rgb += self.imgs_rgb[i].nbytes
-    #     #         pbar_rgb.desc = f'{prefix}Caching RGB images ({gb_rgb / 1E9:.1f}GB)'
-    #     #     pbar_rgb.close()
-    #     #
-    #     #     # IR
-    #     #     gb_ir = 0  # Gigabytes of cached images
-    #     #     self.img_hw0_ir, self.img_hw_ir = [None] * n_ir, [None] * n_ir
-    #     #     results_ir = ThreadPool(8).imap(lambda x: load_image(*x), zip(repeat(self), range(n_ir)))  # 8 threads
-    #     #     pbar_ir = tqdm(enumerate(results_ir), total=n_ir)
-    #     #     for i, x in pbar_ir:
-    #     #         self.imgs_ir[i], self.img_hw0_ir[i], self.img_hw_ir[i] = x  # img, hw_original, hw_resized = load_image(self, i)
-    #     #         gb_ir += self.imgs_ir[i].nbytes
-    #     #         pbar_ir.desc = f'{prefix}Caching RGB images ({gb_ir / 1E9:.1f}GB)'
-    #     #     pbar_ir.close()
-    #
-    #     self.labels = self.labels_rgb
-    #     self.shapes = self.shapes_rgb
-    #     self.indices = self.indices_rgb
-
     def get_img_files(self, img_path):
         """Read image files."""
         try:
@@ -790,11 +550,35 @@ class MultiModalDataset(Dataset):  # for training/testing
             self.rgb_labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
         label.pop('shape', None)  # shape is for rect, remove it
         label['rgb_img'], label['ir_img'], label['ori_shape'], label['resized_shape'] = self.load_image(index)
+        # label['img'], label['ir_img'], label['ori_shape'], label['resized_shape'] = self.load_image(index)
         label['ratio_pad'] = (label['resized_shape'][0] / label['ori_shape'][0],
                               label['resized_shape'][1] / label['ori_shape'][1])  # for evaluation
         if self.rect:
             label['rect_shape'] = self.batch_shapes[self.batch[index]]
         return self.update_labels_info(label)
+
+    @staticmethod
+    def collate_fn(batch):
+        """Collates data samples into batches."""
+        new_batch = {}
+        keys = batch[0].keys()
+        values = list(zip(*[list(b.values()) for b in batch]))
+        for i, k in enumerate(keys):
+            value = values[i]
+            if (k == 'rgb_img') or (k == 'ir_img'):
+                value = torch.stack(value, 0)
+            if k in ['masks', 'keypoints', 'bboxes', 'cls']:
+                value = torch.cat(value, 0)
+            new_batch[k] = value
+        new_batch['batch_idx'] = list(new_batch['batch_idx'])
+        for i in range(len(new_batch['batch_idx'])):
+            new_batch['batch_idx'][i] += i  # add target image index for build_targets()
+        new_batch['batch_idx'] = torch.cat(new_batch['batch_idx'], 0)
+        #rgb和ir拼接在一起
+        new_batch['img'] = torch.cat([new_batch['rgb_img'], new_batch['ir_img']], dim=1)
+        new_batch.pop('rgb_img')
+        new_batch.pop('ir_img')
+        return new_batch
 
     # @staticmethod
     # def collate_fn(batch):
@@ -862,12 +646,12 @@ class MultiModalDataset(Dataset):  # for training/testing
             transforms = Compose([LetterBox_RGB_IR(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
         transforms.append(
             Format_RGB_IR(bbox_format='xywh',
-                   normalize=True,
-                   return_mask=self.use_segments,
-                   return_keypoint=self.use_keypoints,
-                   batch_idx=True,
-                   mask_ratio=hyp.mask_ratio,
-                   mask_overlap=hyp.overlap_mask))
+                          normalize=True,
+                          return_mask=self.use_segments,
+                          return_keypoint=self.use_keypoints,
+                          batch_idx=True,
+                          mask_ratio=hyp.mask_ratio,
+                          mask_overlap=hyp.overlap_mask))
         return transforms
 
     def update_labels_info(self, label):
