@@ -1,10 +1,10 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
+import contextlib
 import glob
 import math
 import os
 import random
 from copy import deepcopy
-import contextlib
 from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -15,18 +15,13 @@ import numpy as np
 import psutil
 import torch
 import torchvision
-import torch.nn.functional as F
 from torch.utils.data import Dataset
-from tqdm import tqdm
-
 from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr, is_dir_writeable, TQDM_BAR_FORMAT
-
 from .augment import Compose, Format, Instances, LetterBox, classify_albumentations, classify_transforms, v8_transforms, \
     LetterBox_RGB_IR, Format_RGB_IR
 from .base import BaseDataset
-from .utils import HELP_URL, LOGGER, get_hash, img2label_paths, verify_image_label, IMG_FORMATS
-from ..utils.ops import xywhn2xyxy, xyxy2xywh
 from .utils import HELP_URL, LOGGER, get_hash, img2label_paths, verify_image, verify_image_label
+from .utils import IMG_FORMATS
 
 # Ultralytics dataset *.cache version, >= 1.0.0 for YOLOv8
 DATASET_CACHE_VERSION = '1.0.3'
@@ -439,29 +434,28 @@ class MultiModalDataset(Dataset):  # for training/testing
         self.label_files = img2label_paths(im_files)
         cache_path = Path(self.label_files[0]).parent.with_suffix('.cache')
         try:
-            import gc
-            gc.disable()  # reduce pickle load time https://github.com/ultralytics/ultralytics/pull/1585
-            cache, exists = np.load(str(cache_path), allow_pickle=True).item(), True  # load dict
-            gc.enable()
-            assert cache['version'] == self.cache_version  # matches current version
-            assert cache['hash'] == get_hash(self.label_files + im_files)  # identical hash
+            cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
+            assert cache['version'] == DATASET_CACHE_VERSION  # matches current version
+            assert cache['hash'] == get_hash(self.label_files + self.im_files)  # identical hash
         except (FileNotFoundError, AssertionError, AttributeError):
-            cache, exists = self.cache_labels(im_files, cache_path), False  # run cache ops
+            cache, exists = self.cache_labels(im_files), False  # run cache ops
 
         # Display cache
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
         if exists and LOCAL_RANK in (-1, 0):
             d = f'Scanning {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt'
-            tqdm(None, desc=self.prefix + d, total=n, initial=n, bar_format=TQDM_BAR_FORMAT)  # display cache results
+            TQDM(None, desc=self.prefix + d, total=n, initial=n)  # display results
             if cache['msgs']:
                 LOGGER.info('\n'.join(cache['msgs']))  # display warnings
-        if nf == 0:  # number of labels found
-            raise FileNotFoundError(f'{self.prefix}No labels found in {cache_path}, can not start training. {HELP_URL}')
 
         # Read cache
         [cache.pop(k) for k in ('hash', 'version', 'msgs')]  # remove items
         labels = cache['labels']
-        im_files = [lb['im_file'] for lb in labels]  # update im_files
+        if not labels:
+            LOGGER.warning(
+                f'WARNING ⚠️ No images found in {cache_path}, training may not work correctly. {HELP_URL}')
+        self.im_files = [lb['im_file'] for lb in labels]  # update im_files
+
 
         # Check if the dataset is all boxes or all segments
         lengths = ((len(lb['cls']), len(lb['bboxes']), len(lb['segments'])) for lb in labels)
@@ -497,7 +491,7 @@ class MultiModalDataset(Dataset):  # for training/testing
                                 iterable=zip(im_files, self.label_files, repeat(self.prefix),
                                              repeat(self.use_keypoints), repeat(len(self.data['names'])), repeat(nkpt),
                                              repeat(ndim)))
-            pbar = tqdm(results, desc=desc, total=total, bar_format=TQDM_BAR_FORMAT)
+            pbar = TQDM(results, desc=desc, total=total, bar_format=TQDM_BAR_FORMAT)
             for im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg in pbar:
                 nm += nm_f
                 nf += nf_f
@@ -579,39 +573,6 @@ class MultiModalDataset(Dataset):  # for training/testing
         new_batch.pop('rgb_img')
         new_batch.pop('ir_img')
         return new_batch
-
-    # @staticmethod
-    # def collate_fn(batch):
-    #     img, label, path, shapes = zip(*batch)  # transposed
-    #     for i, l in enumerate(label):
-    #         l[:, 0] = i  # add target image index for build_targets()
-    #     return torch.stack(img, 0), torch.cat(label, 0), path, shapes
-    #
-    # @staticmethod
-    # def collate_fn4(batch):
-    #     img, label, path, shapes = zip(*batch)  # transposed
-    #     n = len(shapes) // 4
-    #     img4, label4, path4, shapes4 = [], [], path[:n], shapes[:n]
-    #
-    #     ho = torch.tensor([[0., 0, 0, 1, 0, 0]])
-    #     wo = torch.tensor([[0., 0, 1, 0, 0, 0]])
-    #     s = torch.tensor([[1, 1, .5, .5, .5, .5]])  # scale
-    #     for i in range(n):  # zidane torch.zeros(16,3,720,1280)  # BCHW
-    #         i *= 4
-    #         if random.random() < 0.5:
-    #             im = F.interpolate(img[i].unsqueeze(0).float(), scale_factor=2., mode='bilinear', align_corners=False)[
-    #                 0].type(img[i].type())
-    #             l = label[i]
-    #         else:
-    #             im = torch.cat((torch.cat((img[i], img[i + 1]), 1), torch.cat((img[i + 2], img[i + 3]), 1)), 2)
-    #             l = torch.cat((label[i], label[i + 1] + ho, label[i + 2] + wo, label[i + 3] + ho + wo), 0) * s
-    #         img4.append(im)
-    #         label4.append(l)
-    #
-    #     for i, l in enumerate(label4):
-    #         l[:, 0] = i  # add target image index for build_targets()
-    #
-    #     return torch.stack(img4, 0), torch.cat(label4, 0), path4, shapes4
 
     def update_labels(self, include_class: Optional[list]):
         """include_class, filter labels to include only these classes (optional)."""
@@ -726,7 +687,7 @@ class MultiModalDataset(Dataset):  # for training/testing
         fcn = self.cache_images_to_disk if cache == 'disk' else self.load_image
         with ThreadPool(NUM_THREADS) as pool:
             results = pool.imap(fcn, range(self.ni))
-            pbar = tqdm(enumerate(results), total=self.ni, bar_format=TQDM_BAR_FORMAT, disable=LOCAL_RANK > 0)
+            pbar = TQDM(enumerate(results), total=self.ni, bar_format=TQDM_BAR_FORMAT, disable=LOCAL_RANK > 0)
             for i, x in pbar:
                 if cache == 'disk':
                     b += self.rgb_npy_files[i].stat().st_size
