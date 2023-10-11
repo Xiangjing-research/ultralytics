@@ -902,3 +902,6 @@ class MultispectralDetectionModel(BaseModel):
         i = (y[-1].shape[-1] // g) * sum(4 ** (nl - 1 - x) for x in range(e))  # indices
         y[-1] = y[-1][..., i:]  # small
         return y
+
+    def init_criterion(self):
+        return v8DetectionLoss(self)
