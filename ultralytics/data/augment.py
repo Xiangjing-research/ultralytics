@@ -530,151 +530,6 @@ class RandomFlip:
         return labels
 
 
-class LetterBox_RGB_IR:
-    """Resize image and padding for detection, instance segmentation, pose."""
-
-    def __init__(self, new_shape=(640, 640), auto=False, scaleFill=False, scaleup=True, center=True, stride=32):
-        """Initialize LetterBox object with specific parameters."""
-        self.new_shape = new_shape
-        self.auto = auto
-        self.scaleFill = scaleFill
-        self.scaleup = scaleup
-        self.stride = stride
-        self.center = center  # Put the image in the middle or top-left
-
-    def __call__(self, labels=None, image=None):
-        """Return updated labels and image with added border."""
-        if labels is None:
-            labels = {}
-        rgb_img = labels.get('rgb_img') if image is None else image
-        ir_img = labels.get('ir_img') if image is None else image
-        shape = rgb_img.shape[:2]  # current shape [height, width]
-        new_shape = labels.pop('rect_shape', self.new_shape)
-        if isinstance(new_shape, int):
-            new_shape = (new_shape, new_shape)
-
-        # Scale ratio (new / old)
-        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-        if not self.scaleup:  # only scale down, do not scale up (for better val mAP)
-            r = min(r, 1.0)
-
-        # Compute padding
-        ratio = r, r  # width, height ratios
-        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
-        if self.auto:  # minimum rectangle
-            dw, dh = np.mod(dw, self.stride), np.mod(dh, self.stride)  # wh padding
-        elif self.scaleFill:  # stretch
-            dw, dh = 0.0, 0.0
-            new_unpad = (new_shape[1], new_shape[0])
-            ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
-
-        if self.center:
-            dw /= 2  # divide padding into 2 sides
-            dh /= 2
-        if labels.get('ratio_pad'):
-            labels['ratio_pad'] = (labels['ratio_pad'], (dw, dh))  # for evaluation
-
-        if shape[::-1] != new_unpad:  # resize
-            rgb_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
-            ir_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
-
-        top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
-        left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
-        rgb_img = cv2.copyMakeBorder(rgb_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
-                                     value=(114, 114, 114))  # add border
-        ir_img = cv2.copyMakeBorder(ir_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
-                                    value=(114, 114, 114))  # add border
-        if len(labels):
-            labels = self._update_labels(labels, ratio, dw, dh)
-            labels['rgb_img'] = rgb_img
-            labels['ir_img'] = ir_img
-            labels['resized_shape'] = new_shape
-            return labels
-        else:
-            return rgb_img, ir_img
-
-    def _update_labels(self, labels, ratio, padw, padh):
-        """Update labels."""
-        labels['instances'].convert_bbox(format='xyxy')
-        labels['instances'].denormalize(*labels['rgb_img'].shape[:2][::-1])
-        labels['instances'].scale(*ratio)
-        labels['instances'].add_padding(padw, padh)
-        return labels
-
-
-class Format_RGB_IR:
-
-    def __init__(self,
-                 bbox_format='xywh',
-                 normalize=True,
-                 return_mask=False,
-                 return_keypoint=False,
-                 mask_ratio=4,
-                 mask_overlap=True,
-                 batch_idx=True):
-        self.bbox_format = bbox_format
-        self.normalize = normalize
-        self.return_mask = return_mask  # set False when training detection only
-        self.return_keypoint = return_keypoint
-        self.mask_ratio = mask_ratio
-        self.mask_overlap = mask_overlap
-        self.batch_idx = batch_idx  # keep the batch indexes
-
-    def __call__(self, labels):
-        """Return formatted image, classes, bounding boxes & keypoints to be used by 'collate_fn'."""
-        rgb_img = labels.pop('rgb_img')
-        ir_img = labels.pop('ir_img')
-        h, w = rgb_img.shape[:2]
-        cls = labels.pop('cls')
-        instances = labels.pop('instances')
-        instances.convert_bbox(format=self.bbox_format)
-        instances.denormalize(w, h)
-        nl = len(instances)
-
-        if self.return_mask:
-            if nl:
-                masks, instances, cls = self._format_segments(instances, cls, w, h)
-                masks = torch.from_numpy(masks)
-            else:
-                masks = torch.zeros(1 if self.mask_overlap else nl, rgb_img.shape[0] // self.mask_ratio,
-                                    rgb_img.shape[1] // self.mask_ratio)
-            labels['masks'] = masks
-        if self.normalize:
-            instances.normalize(w, h)
-        labels['rgb_img'] = self._format_img(rgb_img)
-        labels['ir_img'] = self._format_img(ir_img)
-        labels['cls'] = torch.from_numpy(cls) if nl else torch.zeros(nl)
-        labels['bboxes'] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
-        if self.return_keypoint:
-            labels['keypoints'] = torch.from_numpy(instances.keypoints)
-        # Then we can use collate_fn
-        if self.batch_idx:
-            labels['batch_idx'] = torch.zeros(nl)
-        return labels
-
-    def _format_img(self, img):
-        """Format the image for YOLOv5 from Numpy array to PyTorch tensor."""
-        if len(img.shape) < 3:
-            img = np.expand_dims(img, -1)
-        img = np.ascontiguousarray(img.transpose(2, 0, 1)[::-1])
-        img = torch.from_numpy(img)
-        return img
-
-    def _format_segments(self, instances, cls, w, h):
-        """convert polygon points to bitmap."""
-        segments = instances.segments
-        if self.mask_overlap:
-            masks, sorted_idx = polygons2masks_overlap((h, w), segments, downsample_ratio=self.mask_ratio)
-            masks = masks[None]  # (640, 640) -> (1, 640, 640)
-            instances = instances[sorted_idx]
-            cls = cls[sorted_idx]
-        else:
-            masks = polygons2masks((h, w), segments, color=1, downsample_ratio=self.mask_ratio)
-
-        return masks, instances, cls
-
-
 class LetterBox:
     """Resize image and padding for detection, instance segmentation, pose."""
 
@@ -1045,3 +900,424 @@ class ToTensor:
         im = im.half() if self.half else im.float()  # uint8 to fp16/32
         im /= 255.0  # 0-255 to 0.0-1.0
         return im
+
+
+# MultiModal augmentations -----------------------------------------------------------------------------------------
+
+class Mosaic_RGB_IR(Mosaic):
+
+    def _mix_transform(self, labels):
+        """Apply mixup transformation to the input image and labels."""
+        assert labels.get('rect_shape', None) is None, 'rect and mosaic are mutually exclusive.'
+        assert len(labels.get('mix_labels', [])), 'There are no other images for mosaic augment.'
+        final_labels = self._mosaic4(labels) if self.n == 4 else self._mosaic9(labels)
+        return final_labels
+
+    def _mosaic4(self, labels):
+        """Create a 2x2 image mosaic."""
+        mosaic_labels = []
+        s = self.imgsz
+        yc, xc = (int(random.uniform(-x, 2 * s + x)) for x in self.border)  # mosaic center x, y
+        for i in range(4):
+            labels_patch = labels if i == 0 else labels['mix_labels'][i - 1]
+            # Load image
+            rgb_img = labels_patch['rgb_img']
+            ir_img = labels_patch['ir_img']
+            h, w = labels_patch.pop('resized_shape')
+
+            # Place img in img4
+            if i == 0:  # top left
+                rgb_img4 = np.full((s * 2, s * 2, rgb_img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                ir_img4 = np.full((s * 2, s * 2, ir_img.shape[2]), 114, dtype=np.uint8)
+                x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
+            elif i == 1:  # top right
+                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+                x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
+            elif i == 2:  # bottom left
+                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
+            elif i == 3:  # bottom right
+                x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
+
+            rgb_img4[y1a:y2a, x1a:x2a] = rgb_img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
+            ir_img4[y1a:y2a, x1a:x2a] = ir_img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
+            padw = x1a - x1b
+            padh = y1a - y1b
+
+            labels_patch = self._update_labels(labels_patch, padw, padh)
+            mosaic_labels.append(labels_patch)
+        final_labels = self._cat_labels(mosaic_labels)
+        final_labels['rgb_img'] = rgb_img4
+        final_labels['ir_img'] = ir_img4
+        return final_labels
+
+    def _mosaic9(self, labels):
+        """Create a 3x3 image mosaic."""
+        mosaic_labels = []
+        s = self.imgsz
+        hp, wp = -1, -1  # height, width previous
+        for i in range(9):
+            labels_patch = labels if i == 0 else labels['mix_labels'][i - 1]
+            # Load image
+            rgb_img = labels_patch['rgb_img']
+            ir_img = labels_patch['ir_img']
+            h, w = labels_patch.pop('resized_shape')
+
+            # Place img in img9
+            if i == 0:  # center
+                rgb_img9 = np.full((s * 3, s * 3, rgb_img.shape[2]), 114, dtype=np.uint8)
+                ir_img9 = np.full((s * 3, s * 3, ir_img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                h0, w0 = h, w
+                c = s, s, s + w, s + h  # xmin, ymin, xmax, ymax (base) coordinates
+            elif i == 1:  # top
+                c = s, s - h, s + w, s
+            elif i == 2:  # top right
+                c = s + wp, s - h, s + wp + w, s
+            elif i == 3:  # right
+                c = s + w0, s, s + w0 + w, s + h
+            elif i == 4:  # bottom right
+                c = s + w0, s + hp, s + w0 + w, s + hp + h
+            elif i == 5:  # bottom
+                c = s + w0 - w, s + h0, s + w0, s + h0 + h
+            elif i == 6:  # bottom left
+                c = s + w0 - wp - w, s + h0, s + w0 - wp, s + h0 + h
+            elif i == 7:  # left
+                c = s - w, s + h0 - h, s, s + h0
+            elif i == 8:  # top left
+                c = s - w, s + h0 - hp - h, s, s + h0 - hp
+
+            padw, padh = c[:2]
+            x1, y1, x2, y2 = (max(x, 0) for x in c)  # allocate coords
+
+            # Image
+            rgb_img9[y1:y2, x1:x2] = rgb_img[y1 - padh:, x1 - padw:]  # img9[ymin:ymax, xmin:xmax]
+            ir_img9[y1:y2, x1:x2] = ir_img[y1 - padh:, x1 - padw:]  # img9[ymin:ymax, xmin:xmax]
+            hp, wp = h, w  # height, width previous for next iteration
+
+            # Labels assuming imgsz*2 mosaic size
+            labels_patch = self._update_labels(labels_patch, padw + self.border[0], padh + self.border[1])
+            mosaic_labels.append(labels_patch)
+        final_labels = self._cat_labels(mosaic_labels)
+
+        final_labels['rgb_img'] = rgb_img9[-self.border[0]:self.border[0], -self.border[1]:self.border[1]]
+        final_labels['ir_img'] = ir_img9[-self.border[0]:self.border[0], -self.border[1]:self.border[1]]
+        return final_labels
+
+
+class LetterBox_RGB_IR(LetterBox):
+
+    def __call__(self, labels=None, image=None):
+        """Return updated labels and image with added border."""
+        if labels is None:
+            labels = {}
+        rgb_img = labels.get('rgb_img') if image is None else image
+        ir_img = labels.get('ir_img') if image is None else image
+        assert rgb_img.shape == ir_img.shape
+        shape = rgb_img.shape[:2]  # current shape [height, width]
+        new_shape = labels.pop('rect_shape', self.new_shape)
+        if isinstance(new_shape, int):
+            new_shape = (new_shape, new_shape)
+
+        # Scale ratio (new / old)
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        if not self.scaleup:  # only scale down, do not scale up (for better val mAP)
+            r = min(r, 1.0)
+
+        # Compute padding
+        ratio = r, r  # width, height ratios
+        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+        if self.auto:  # minimum rectangle
+            dw, dh = np.mod(dw, self.stride), np.mod(dh, self.stride)  # wh padding
+        elif self.scaleFill:  # stretch
+            dw, dh = 0.0, 0.0
+            new_unpad = (new_shape[1], new_shape[0])
+            ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
+
+        if self.center:
+            dw /= 2  # divide padding into 2 sides
+            dh /= 2
+        if labels.get('ratio_pad'):
+            labels['ratio_pad'] = (labels['ratio_pad'], (dw, dh))  # for evaluation
+
+        if shape[::-1] != new_unpad:  # resize
+            rgb_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            ir_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+        top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
+        rgb_img = cv2.copyMakeBorder(rgb_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                     value=(114, 114, 114))  # add border
+        ir_img = cv2.copyMakeBorder(ir_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                    value=(114, 114, 114))  # add border
+        if len(labels):
+            labels = self._update_labels(labels, ratio, dw, dh)
+            labels['rgb_img'] = rgb_img
+            labels['ir_img'] = ir_img
+            labels['resized_shape'] = new_shape
+            return labels
+        else:
+            return rgb_img, ir_img
+
+    def _update_labels(self, labels, ratio, padw, padh):
+        """Update labels."""
+        labels['instances'].convert_bbox(format='xyxy')
+        labels['instances'].denormalize(*labels['rgb_img'].shape[:2][::-1])
+        labels['instances'].scale(*ratio)
+        labels['instances'].add_padding(padw, padh)
+        return labels
+
+
+class Format_RGB_IR(Format):
+
+    def __call__(self, labels):
+        """Return formatted image, classes, bounding boxes & keypoints to be used by 'collate_fn'."""
+        rgb_img = labels.pop('rgb_img')
+        ir_img = labels.pop('ir_img')
+        h, w = rgb_img.shape[:2]
+        cls = labels.pop('cls')
+        instances = labels.pop('instances')
+        instances.convert_bbox(format=self.bbox_format)
+        instances.denormalize(w, h)
+        nl = len(instances)
+
+        if self.return_mask:
+            if nl:
+                masks, instances, cls = self._format_segments(instances, cls, w, h)
+                masks = torch.from_numpy(masks)
+            else:
+                masks = torch.zeros(1 if self.mask_overlap else nl, rgb_img.shape[0] // self.mask_ratio,
+                                    rgb_img.shape[1] // self.mask_ratio)
+            labels['masks'] = masks
+        if self.normalize:
+            instances.normalize(w, h)
+        labels['rgb_img'] = self._format_img(rgb_img)
+        labels['ir_img'] = self._format_img(ir_img)
+        labels['cls'] = torch.from_numpy(cls) if nl else torch.zeros(nl)
+        labels['bboxes'] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
+        if self.return_keypoint:
+            labels['keypoints'] = torch.from_numpy(instances.keypoints)
+        # Then we can use collate_fn
+        if self.batch_idx:
+            labels['batch_idx'] = torch.zeros(nl)
+        return labels
+
+
+class CopyPaste_RGB_IR(CopyPaste):
+
+    def __call__(self, labels):
+        """Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)."""
+        instances = labels.pop('instances')
+        # for img_type in ['rgb_img', 'ir_img']:
+        rgb_img = labels['rgb_img']
+        ir_img = labels['ir_img']
+        cls = labels['cls']
+        assert rgb_img.shape == ir_img.shape
+        h, w = rgb_img.shape[:2]
+        instances.convert_bbox(format='xyxy')
+        instances.denormalize(w, h)
+        if self.p and len(instances.segments):
+            n = len(instances)
+            _, w, _ = rgb_img.shape  # height, width, channels
+            rgb_im_new = np.zeros(rgb_img.shape, np.uint8)
+            ir_im_new = np.zeros(rgb_img.shape, np.uint8)
+
+            # Calculate ioa first then select indexes randomly
+            ins_flip = deepcopy(instances)
+            ins_flip.fliplr(w)
+
+            ioa = bbox_ioa(ins_flip.bboxes, instances.bboxes)  # intersection over area, (N, M)
+            indexes = np.nonzero((ioa < 0.30).all(1))[0]  # (N, )
+            n = len(indexes)
+            for j in random.sample(list(indexes), k=round(self.p * n)):
+                cls = np.concatenate((cls, cls[[j]]), axis=0)
+                instances = Instances.concatenate((instances, ins_flip[[j]]), axis=0)
+                cv2.drawContours(rgb_im_new, instances.segments[[j]].astype(np.int32), -1, (1, 1, 1), cv2.FILLED)
+                cv2.drawContours(ir_im_new, instances.segments[[j]].astype(np.int32), -1, (1, 1, 1), cv2.FILLED)
+
+            rgb_result = cv2.flip(rgb_img, 1)  # augment segments (flip left-right)
+            ir_result = cv2.flip(ir_img, 1)  # augment segments (flip left-right)
+            rgb_i = cv2.flip(rgb_im_new, 1).astype(bool)
+            ir_i = cv2.flip(ir_im_new, 1).astype(bool)
+            rgb_img[rgb_i] = rgb_result[rgb_i]
+            ir_img[ir_i] = ir_result[ir_i]
+
+        labels['rgb_img'] = rgb_img
+        labels['ir_img'] = ir_img
+        labels['cls'] = cls
+        labels['instances'] = instances
+        return labels
+
+
+class RandomPerspective_RGB_IR(RandomPerspective):
+
+    def __call__(self, labels):
+        """
+        Affine images and targets.
+
+        Args:
+            labels (dict): a dict of `bboxes`, `segments`, `keypoints`.
+        """
+        if self.pre_transform and 'mosaic_border' not in labels:
+            labels = self.pre_transform(labels)
+        labels.pop('ratio_pad', None)  # do not need ratio pad
+        instances = labels.pop('instances')
+        border = labels.pop('mosaic_border', self.border)
+        rgb_img = labels['rgb_img']
+        ir_img = labels['ir_img']
+        cls = labels['cls']
+        # Make sure the coord formats are right
+        instances.convert_bbox(format='xyxy')
+        instances.denormalize(*rgb_img.shape[:2][::-1])
+        instances.denormalize(*ir_img.shape[:2][::-1])
+        self.size = rgb_img.shape[1] + border[1] * 2, rgb_img.shape[0] + border[0] * 2  # w, h
+        # M is affine matrix
+        # scale for func:`box_candidates`
+        rgb_img, M, scale = self.affine_transform(rgb_img, border)
+        ir_img, M, scale = self.affine_transform(ir_img, border)
+
+        bboxes = self.apply_bboxes(instances.bboxes, M)
+
+        segments = instances.segments
+        keypoints = instances.keypoints
+        # Update bboxes if there are segments.
+        if len(segments):
+            bboxes, segments = self.apply_segments(segments, M)
+
+        if keypoints is not None:
+            keypoints = self.apply_keypoints(keypoints, M)
+        new_instances = Instances(bboxes, segments, keypoints, bbox_format='xyxy', normalized=False)
+        # Clip
+        new_instances.clip(*self.size)
+
+        # Filter instances
+        instances.scale(scale_w=scale, scale_h=scale, bbox_only=True)
+        # Make the bboxes have the same scale with new_bboxes
+        i = self.box_candidates(box1=instances.bboxes.T,
+                                box2=new_instances.bboxes.T,
+                                area_thr=0.01 if len(segments) else 0.10)
+        labels['instances'] = new_instances[i]
+        labels['cls'] = cls[i]
+        labels['rgb_img'] = rgb_img
+        labels['ir_img'] = ir_img
+        labels['resized_shape'] = rgb_img.shape[:2]
+        return labels
+
+
+class Albumentations_RGB_IR(Albumentations):
+    def __call__(self, labels):
+        """Generates object detections and returns a dictionary with detection results."""
+        rgb_img = labels['rgb_img']
+        ir_img = labels['ir_img']
+        cls = labels['cls']
+        if len(cls):
+            labels['instances'].convert_bbox('xywh')
+            labels['instances'].normalize(*rgb_img.shape[:2][::-1])
+            labels['instances'].normalize(*ir_img.shape[:2][::-1])
+
+            bboxes = labels['instances'].bboxes
+            # TODO: add supports of segments and keypoints
+            if self.transform and random.random() < self.p:
+                rgb_img_new = self.transform(image=rgb_img, bboxes=bboxes, class_labels=cls)  # transformed
+                ir_img_new = self.transform(image=ir_img, bboxes=bboxes, class_labels=cls)  # transformed
+                if len(rgb_img_new['class_labels']) > 0:  # skip update if no bbox in new im
+                    labels['rgb_img'] = rgb_img_new['image']
+                    labels['ir_img'] = ir_img_new['image']
+                    labels['cls'] = np.array(rgb_img_new['class_labels'])
+                    bboxes = np.array(rgb_img_new['bboxes'], dtype=np.float32)
+            labels['instances'].update(bboxes=bboxes)
+        return labels
+
+
+class RandomHSV_RGB_IR(RandomHSV):
+
+    def __call__(self, labels):
+        """Applies image HSV augmentation"""
+        for img_type in ['rgb_img', 'ir_img']:
+            if self.hgain or self.sgain or self.vgain:
+                r = np.random.uniform(-1, 1, 3) * [self.hgain, self.sgain, self.vgain] + 1  # random gains
+                hue, sat, val = cv2.split(cv2.cvtColor(labels[img_type], cv2.COLOR_BGR2HSV))
+                dtype = labels[img_type].dtype  # uint8
+
+                x = np.arange(0, 256, dtype=r.dtype)
+                lut_hue = ((x * r[0]) % 180).astype(dtype)
+                lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+                lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+
+                im_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val)))
+                cv2.cvtColor(im_hsv, cv2.COLOR_HSV2BGR, dst=labels[img_type])  # no return needed
+        return labels
+
+
+class RandomFlip_RGB_IR(RandomFlip):
+
+    def __call__(self, labels):
+        """Resize image and padding for detection, instance segmentation, pose."""
+        rgb_img = labels['rgb_img']
+        ir_img = labels['ir_img']
+        instances = labels.pop('instances')
+        instances.convert_bbox(format='xywh')
+        h, w = rgb_img.shape[:2]
+        h = 1 if instances.normalized else h
+        w = 1 if instances.normalized else w
+
+        # Flip up-down
+        if self.direction == 'vertical' and random.random() < self.p:
+            rgb_img = np.flipud(rgb_img)
+            ir_img = np.flipud(ir_img)
+            instances.flipud(h)
+        if self.direction == 'horizontal' and random.random() < self.p:
+            rgb_img = np.fliplr(rgb_img)
+            ir_img = np.fliplr(ir_img)
+            instances.fliplr(w)
+            # For keypoints
+            if self.flip_idx is not None and instances.keypoints is not None:
+                instances.keypoints = np.ascontiguousarray(instances.keypoints[:, self.flip_idx, :])
+        labels['rgb_img'] = np.ascontiguousarray(rgb_img)
+        labels['ir_img'] = np.ascontiguousarray(ir_img)
+        labels['instances'] = instances
+        return labels
+
+class MixUp_RGB_IR(MixUp):
+
+    def _mix_transform(self, labels):
+        """Applies MixUp augmentation https://arxiv.org/pdf/1710.09412.pdf."""
+        r = np.random.beta(32.0, 32.0)  # mixup ratio, alpha=beta=32.0
+        labels2 = labels['mix_labels'][0]
+        labels['rgb_img'] = (labels['rgb_img'] * r + labels2['rgb_img'] * (1 - r)).astype(np.uint8)
+        labels['ir_img'] = (labels['ir_img'] * r + labels2['ir_img'] * (1 - r)).astype(np.uint8)
+        labels['instances'] = Instances.concatenate([labels['instances'], labels2['instances']], axis=0)
+        labels['cls'] = np.concatenate([labels['cls'], labels2['cls']], 0)
+        return labels
+
+def v8_transforms_rgb_ir(dataset, imgsz, hyp, stretch=False):
+    """Convert images to a size suitable for YOLOv8 training."""
+    pre_transform = Compose([
+        Mosaic_RGB_IR(dataset, imgsz=imgsz, p=hyp.mosaic),
+        CopyPaste_RGB_IR(p=hyp.copy_paste),
+        RandomPerspective_RGB_IR(
+            degrees=hyp.degrees,
+            translate=hyp.translate,
+            scale=hyp.scale,
+            shear=hyp.shear,
+            perspective=hyp.perspective,
+            pre_transform=None if stretch else LetterBox_RGB_IR(new_shape=(imgsz, imgsz)),
+        )])
+    flip_idx = dataset.data.get('flip_idx', [])  # for keypoints augmentation
+    if dataset.use_keypoints:
+        kpt_shape = dataset.data.get('kpt_shape', None)
+        if len(flip_idx) == 0 and hyp.fliplr > 0.0:
+            hyp.fliplr = 0.0
+            LOGGER.warning("WARNING ⚠️ No 'flip_idx' array defined in data.yaml, setting augmentation 'fliplr=0.0'")
+        elif flip_idx and (len(flip_idx) != kpt_shape[0]):
+            raise ValueError(f'data.yaml flip_idx={flip_idx} length must be equal to kpt_shape[0]={kpt_shape[0]}')
+
+    return Compose([
+        pre_transform,
+        MixUp_RGB_IR(dataset, pre_transform=pre_transform, p=hyp.mixup),
+        Albumentations_RGB_IR(p=1.0),
+        RandomHSV_RGB_IR(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
+        RandomFlip_RGB_IR(direction='vertical', p=hyp.flipud),
+        RandomFlip_RGB_IR(direction='horizontal', p=hyp.fliplr, flip_idx=flip_idx)])  # transforms
