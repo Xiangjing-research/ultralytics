@@ -16,7 +16,6 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ultralytics.nn.tasks import MultispectralDetectionModel
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, __version__
 from ultralytics.utils.checks import check_version
 
