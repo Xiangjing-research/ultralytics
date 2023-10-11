@@ -18,7 +18,7 @@ import torchvision
 from torch.utils.data import Dataset
 from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr, is_dir_writeable, TQDM_BAR_FORMAT
 from .augment import Compose, Format, Instances, LetterBox, classify_albumentations, classify_transforms, v8_transforms, \
-    LetterBox_RGB_IR, Format_RGB_IR
+    LetterBox_RGB_IR, Format_RGB_IR, v8_transforms_rgb_ir
 from .base import BaseDataset
 from .utils import HELP_URL, LOGGER, get_hash, img2label_paths, verify_image, verify_image_label
 from .utils import IMG_FORMATS
@@ -339,8 +339,6 @@ class MultiModalDataset(Dataset):  # for training/testing
     多模态数据集 （RGB 和 IR）
     """
 
-    cache_version = '1.0.2'  # dataset labels *.cache version, >= 1.0.0 for YOLOv8
-    rand_interp_methods = [cv2.INTER_NEAREST, cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA, cv2.INTER_LANCZOS4]
 
     def __init__(self, data=None, use_segments=False, use_keypoints=False,
                  rgb_path=None,
@@ -371,8 +369,13 @@ class MultiModalDataset(Dataset):  # for training/testing
         self.fraction = fraction
         self.rgb_im_files = self.get_img_files(self.rgb_path)
         self.ir_im_files = self.get_img_files(self.ir_path)
+
         self.rgb_labels = self.get_labels(self.rgb_im_files)
+        self.rgb_im_files = [lb['im_file'] for lb in self.rgb_labels]  # update im_files
+
         self.ir_labels = self.get_labels(self.ir_im_files)
+        self.ir_im_files = [lb['im_file'] for lb in self.ir_labels]  # update im_files
+
         self.update_labels(include_class=classes)  # single_cls and include_class
         self.ni = len(self.rgb_labels)  # number of images
         self.rect = rect
@@ -436,9 +439,9 @@ class MultiModalDataset(Dataset):  # for training/testing
         try:
             cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
             assert cache['version'] == DATASET_CACHE_VERSION  # matches current version
-            assert cache['hash'] == get_hash(self.label_files + self.im_files)  # identical hash
+            assert cache['hash'] == get_hash(self.label_files + im_files)  # identical hash
         except (FileNotFoundError, AssertionError, AttributeError):
-            cache, exists = self.cache_labels(im_files), False  # run cache ops
+            cache, exists = self.cache_labels(im_files,cache_path), False  # run cache ops
 
         # Display cache
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
@@ -454,8 +457,6 @@ class MultiModalDataset(Dataset):  # for training/testing
         if not labels:
             LOGGER.warning(
                 f'WARNING ⚠️ No images found in {cache_path}, training may not work correctly. {HELP_URL}')
-        self.im_files = [lb['im_file'] for lb in labels]  # update im_files
-
 
         # Check if the dataset is all boxes or all segments
         lengths = ((len(lb['cls']), len(lb['bboxes']), len(lb['segments'])) for lb in labels)
@@ -520,15 +521,7 @@ class MultiModalDataset(Dataset):  # for training/testing
         x['hash'] = get_hash(self.label_files + im_files)
         x['results'] = nf, nm, ne, nc, len(im_files)
         x['msgs'] = msgs  # warnings
-        x['version'] = self.cache_version  # cache version
-        if is_dir_writeable(path.parent):
-            if path.exists():
-                path.unlink()  # remove *.cache file if exists
-            np.save(str(path), x)  # save cache for next time
-            path.with_suffix('.cache.npy').rename(path)  # remove .npy suffix
-            LOGGER.info(f'{self.prefix}New cache created: {path}')
-        else:
-            LOGGER.warning(f'{self.prefix}WARNING ⚠️ Cache directory {path.parent} is not writeable, cache not saved.')
+        save_dataset_cache_file(self.prefix, path, x)
         return x
 
     def __len__(self):
@@ -602,7 +595,7 @@ class MultiModalDataset(Dataset):  # for training/testing
         if self.augment:
             hyp.mosaic = hyp.mosaic if self.augment and not self.rect else 0.0
             hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
-            transforms = v8_transforms(self, self.imgsz, hyp)
+            transforms = v8_transforms_rgb_ir(self, self.imgsz, hyp)
         else:
             transforms = Compose([LetterBox_RGB_IR(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
         transforms.append(
@@ -704,7 +697,7 @@ class MultiModalDataset(Dataset):  # for training/testing
         bi = np.floor(np.arange(self.ni) / self.batch_size).astype(int)  # batch index
         nb = bi[-1] + 1  # number of batches
 
-        s = np.array([x.pop('shape') for x in self.labels])  # hw
+        s = np.array([x.pop('shape') for x in self.rgb_labels])  # hw
         ar = s[:, 0] / s[:, 1]  # aspect ratio
         irect = ar.argsort()
         self.rgb_im_files = [self.rgb_im_files[i] for i in irect]
