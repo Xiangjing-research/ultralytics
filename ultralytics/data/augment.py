@@ -1005,6 +1005,14 @@ class Mosaic_RGB_IR(Mosaic):
         final_labels['ir_img'] = ir_img9[-self.border[0]:self.border[0], -self.border[1]:self.border[1]]
         return final_labels
 
+    @staticmethod
+    def _update_labels(labels, padw, padh):
+        """Update labels."""
+        nh, nw = labels['rgb_img'].shape[:2]
+        labels['instances'].convert_bbox(format='xyxy')
+        labels['instances'].denormalize(nw, nh)
+        labels['instances'].add_padding(padw, padh)
+        return labels
 
 class LetterBox_RGB_IR(LetterBox):
 
