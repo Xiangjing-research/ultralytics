@@ -5,7 +5,7 @@ task: multispectral  # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: val # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
                       # MultiModal mode  i.e  train-MultiModal val-MultiModal
 # Train settings -------------------------------------------------------------------------------------------------------
-model: ../../../cfg/models/v8/yolov8l-TwoStream.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
+model: ../../../cfg/models/v8/yolov8l-DMF.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
 #model: ./weights/yolov8l.pt # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
 data:  ../../../cfg/datasets/LLVIP.yaml # (str, optional) path to data file, i.e. coco128.yaml
 epochs: 100  # (int) number of epochs to train for
