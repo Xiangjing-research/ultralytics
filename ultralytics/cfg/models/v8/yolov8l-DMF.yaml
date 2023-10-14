@@ -37,11 +37,11 @@ backbone:
 #-----------stem two 5-6层-------------#
   ### visible image input ###
   # [from, repeats, module, args]
-  - [4, 1, Conv, [512, 3, 2]]  # 13-P4/16
+  - [11, 1, Conv, [512, 3, 2]]  # 13-P4/16
   - [-1, 6, C2f, [512, True]]  # 14
   ### infrared image input ###
   # [from, repeats, module, args]
-  - [9, 1, Conv, [512, 3, 2]]  # 15-P4/16
+  - [12, 1, Conv, [512, 3, 2]]  # 15-P4/16
   - [-1, 6, C2f, [512, True]]  # 16
 #-----------stem two-------------#
 #-----------fusion bloak two -------------#
@@ -52,12 +52,12 @@ backbone:
 #-----------stem three-------------#
   ### visible image input ###
   # [from, repeats, module, args]
-  - [12, 1, Conv, [1024, 3, 2]]  # 20-P5/32
+  - [19, 1, Conv, [1024, 3, 2]]  # 20-P5/32
   - [-1, 3, C2f, [1024, True]]  # 21
   - [-1, 1, SPPF, [1024, 5]]  # 22
   ### infrared image input ###
   # [from, repeats, module, args]
-  - [ 14, 1, Conv, [ 1024, 3, 2 ] ]  # 23-P5/32
+  - [ 19, 1, Conv, [ 1024, 3, 2 ] ]  # 23-P5/32
   - [ -1, 3, C2f, [ 1024, True ] ]  # 24
   - [ -1, 1, SPPF, [ 1024, 5 ] ]  # 25
 #-----------stem three-------------#
