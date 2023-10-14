@@ -64,7 +64,6 @@ class MultiDilatelocalAttention(nn.Module):
                  attn_drop=0., drop=0., drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, proj_drop=0.,
                  kernel_size=3, dilation=[1, 2, 3, 4]):
         super().__init__()
-        print(dim, num_heads)
         self.dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -103,22 +102,23 @@ class MultiDilatelocalAttention(nn.Module):
     #     x = self.proj_drop(x)
     #     return x
 
-    def forward(self, x1, x2, x3):
-        B, C, H, W = x1.shape  # ([8, 96, 56, 56])
-        q, k, v = self.q(x1), self.k(x2), self.v(x3),
+    def forward(self, sub_feat, ori_feat):
+
+        B, C, H, W = ori_feat.shape  # ([8, 96, 56, 56])
+        q, k, v = self.q(sub_feat), self.k(ori_feat), self.v(ori_feat),
         q = q.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3,
                                                                                   4)  # num_dilation, B, C//num_dilation , H, W
         k = k.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)
         v = v.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)
-        x = Tensor(self.num_dilation, B, H, W, C // self.num_dilation).cuda()
+        sub_feat = sub_feat.reshape(self.num_dilation, B, H, W, C // self.num_dilation)
         for i in range(self.num_dilation):
-            x[i] = self.dilate_attention[i](q[i], k[i], v[i])  # B, H, W,C//num_dilation
-        x = x.permute(1, 2, 3, 0, 4).reshape(B, H, W, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        x = x.permute(0, 3, 1, 2)
-        return x
+            sub_feat[i] = self.dilate_attention[i](q[i], k[i], v[i])  # B, H, W,C//num_dilation
+        sub_feat = sub_feat.permute(1, 2, 3, 0, 4).reshape(B, H, W, C)
+        sub_feat = self.proj(sub_feat)
+        sub_feat = self.proj_drop(sub_feat)
+        sub_feat = sub_feat + self.drop_path(self.mlp(self.norm2(sub_feat)))
+        sub_feat = sub_feat.permute(0, 3, 1, 2)
+        return sub_feat
 
 
 class DFMSDA(nn.Module):
@@ -146,10 +146,10 @@ class DFMSDA(nn.Module):
     def forward(self, x):
         vi_feature, ir_feature = x[0], x[1]
         sub_vi_ir = vi_feature - ir_feature
-        vi_ir_div = self.attn_vi_ir(sub_vi_ir, ir_feature, ir_feature)
+        vi_ir_div = self.attn_vi_ir(sub_vi_ir, ir_feature)
 
         sub_ir_vi = ir_feature - vi_feature
-        ir_vi_div = self.attn_ir_vi(sub_ir_vi, vi_feature, vi_feature)
+        ir_vi_div = self.attn_ir_vi(sub_ir_vi, vi_feature)
 
         # 特征加上各自的带有简易通道注意力机制的互补特征
         return vi_ir_div, ir_vi_div

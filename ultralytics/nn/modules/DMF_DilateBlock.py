@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from models.dilateformer import DilateBlock
+from ultralytics.nn.modules.dilateformer import DilateBlock
 
 
 class DFMSDA(nn.Module):

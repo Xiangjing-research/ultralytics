@@ -2,7 +2,7 @@ import torch.nn as nn
 from timm.models.layers import DropPath
 from torch import Tensor
 
-from models.dilateformer import DilateAttention, Mlp
+from ultralytics.nn.modules.dilateformer import DilateAttention, Mlp
 
 
 class DFMSDA(nn.Module):

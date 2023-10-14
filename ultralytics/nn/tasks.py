@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment,Concat2)
+                                    RTDETRDecoder, Segment, Add, Add2, DFMSDA)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -707,9 +707,18 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-        elif m is Concat2:
-            print('Concat2 init args')
-            c2 = sum(ch[x] for x in f)
+        elif m is Add:
+            # print("ch[f]", f, ch[f[0]])
+            c2 = ch[f[0]]
+            args = [c2]
+        elif m is Add2:
+            # print("ch[f]", f, ch[f[0]])
+            c2 = ch[f[0]]
+            # print("Add2 arg", args[0])
+            args = [c2, args[1]]
+        elif m is DFMSDA:
+            c2 = ch[f[0]]
+            args = [c2, args[1]]
         elif m in (Detect, Segment, Pose):
             args.append([ch[x] for x in f])
             if m is Segment:
