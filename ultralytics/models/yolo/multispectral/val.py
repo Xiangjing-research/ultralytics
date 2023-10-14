@@ -207,6 +207,7 @@ class MultispectralDetectionValidator(BaseValidator):
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
         """
+        主要修改的是dataloader
         Supports validation of a pre-trained model if passed or a model being trained if trainer is passed (trainer
         gets priority).
         """
@@ -340,10 +341,10 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 if __name__ == '__main__':
     # validator = MultispectralDetectionValidator(args=DEFAULT_CFG)
     # validator(model=DEFAULT_CFG.model)
-    # from ultralytics import YOLO
+    from ultralytics import YOLO
 
-    # yolo = YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task)
-    # yolo.val()
+    yolo = YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task)
+    yolo.val()
     # YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task).train()
 
     #
@@ -358,6 +359,3 @@ if __name__ == '__main__':
     # x = x.split(split_size=3, dim=0)
     # rgb, ir = x[0],x[1]
     # print(rgb.shape)
-
-    a = {'a':123,'b':123}
-    b = {'imga': 123, 'imgb': 123}
