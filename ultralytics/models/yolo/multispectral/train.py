@@ -117,7 +117,7 @@ class MultispectralDetectionTrainer(BaseTrainer):
         self.scheduler.last_epoch = self.start_epoch - 1  # do not move
         self.run_callbacks('on_pretrain_routine_end')
 
-    def build_dataset(self, rgb_path, ir_path, mode='val', batch=None):
+    def build_dataset(self, rgb_path=None, ir_path=None, mode='val', batch=None):
         """
         Build MultiModal Dataset.
 
@@ -131,7 +131,7 @@ class MultispectralDetectionTrainer(BaseTrainer):
         return build_multimodal_dataset(self.args, rgb_path, ir_path, batch, self.data, mode=mode, rect=mode == 'val',
                                         stride=gs)
 
-    def get_dataloader(self, rgb_path, ir_path, batch_size=16, rank=0, mode='train'):
+    def get_dataloader(self, rgb_path=None, ir_path=None, batch_size=16, rank=0, mode='train'):
         """Construct and return dataloader."""
         assert mode in ['train', 'val']
         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
