@@ -97,6 +97,52 @@ class MultiDilatelocalAttention(nn.Module):
         return q_mtrix
 
 
+# class DFMSDABlock(nn.Module):
+#     ''' 差分模态特征 DMF'''
+#     ''' Difference Feature MultiDilatelocalAttention  DFMDA'''
+#     ''' 多模态差分特征  Cross-Modality Difference Feature DilateAttention CMDFDA'''
+#     """ Self attention Layer"""
+#
+#     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+#                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, kernel_size=3, dilation=[1, 2, 3, 4]):
+#         super().__init__()
+#         self.dim = dim
+#         self.num_heads = num_heads
+#         self.mlp_ratio = mlp_ratio
+#         self.kernel_size = kernel_size
+#         self.dilation = dilation
+#         self.norm1 = norm_layer(dim)
+#         self.attn = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
+#                                               attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
+#         # self.attn_ir_vi = MultiDilatelocalAttention(dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
+#         #                                             qk_scale=qk_scale,
+#         #                                             attn_drop=attn_drop, drop=drop, drop_path=drop_path,
+#         #                                             act_layer=act_layer,
+#         #                                             norm_layer=norm_layer, kernel_size=kernel_size, dilation=dilation)
+#         self.drop_path = DropPath(
+#             drop_path) if drop_path > 0. else nn.Identity()
+#         self.norm2 = norm_layer(dim)
+#         mlp_hidden_dim = int(dim * mlp_ratio)
+#         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
+#                        act_layer=act_layer, drop=drop)
+#
+#     def forward(self, x):
+#         vi_feature, ir_feature = x[0], x[1]
+#         vi_feature = vi_feature.permute(0, 2, 3, 1)  # B, H, W, C
+#         ir_feature = ir_feature.permute(0, 2, 3, 1)  # B, H, W, C
+#         sub_vi_ir = vi_feature - ir_feature
+#
+#         sub_vi_ir = sub_vi_ir + self.drop_path(
+#             self.attn(self.norm1(sub_vi_ir), self.norm1(vi_feature), self.norm1(vi_feature)))
+#         sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp(self.norm2(sub_vi_ir)))
+#
+#         sub_ir_vi = ir_feature - vi_feature
+#         sub_ir_vi = sub_ir_vi + self.drop_path(
+#             self.attn(self.norm1(sub_ir_vi), self.norm1(ir_feature), self.norm1(ir_feature)))
+#         sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp(self.norm2(sub_ir_vi)))
+#
+#         return sub_vi_ir.permute(0, 3, 1, 2), sub_ir_vi.permute(0, 3, 1, 2) # B, C, H, W
+
 class DFMSDABlock(nn.Module):
     ''' 差分模态特征 DMF'''
     ''' Difference Feature MultiDilatelocalAttention  DFMDA'''
@@ -111,19 +157,21 @@ class DFMSDABlock(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.kernel_size = kernel_size
         self.dilation = dilation
-        self.norm1 = norm_layer(dim)
-        self.attn = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
+        self.norm1_vi_ir = norm_layer(dim)
+        self.norm1_ir_vi = norm_layer(dim)
+        self.attn_vi_ir = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
                                               attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
-        # self.attn_ir_vi = MultiDilatelocalAttention(dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
-        #                                             qk_scale=qk_scale,
-        #                                             attn_drop=attn_drop, drop=drop, drop_path=drop_path,
-        #                                             act_layer=act_layer,
-        #                                             norm_layer=norm_layer, kernel_size=kernel_size, dilation=dilation)
+        self.attn_ir_vi = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias,
+                                                    qk_scale=qk_scale,
+                                                    attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
         self.drop_path = DropPath(
             drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.norm2_vi_ir = norm_layer(dim)
+        self.norm2_ir_vi = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
+                       act_layer=act_layer, drop=drop)
+        self.mlp2 = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
                        act_layer=act_layer, drop=drop)
 
     def forward(self, x):
@@ -133,12 +181,12 @@ class DFMSDABlock(nn.Module):
         sub_vi_ir = vi_feature - ir_feature
 
         sub_vi_ir = sub_vi_ir + self.drop_path(
-            self.attn(self.norm1(sub_vi_ir), self.norm1(vi_feature), self.norm1(vi_feature)))
-        sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp(self.norm2(sub_vi_ir)))
+            self.attn_vi_ir(self.norm1_vi_ir(sub_vi_ir), self.norm1_vi_ir(vi_feature), self.norm1_vi_ir(vi_feature)))
+        sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp(self.norm2_vi_ir(sub_vi_ir)))
 
         sub_ir_vi = ir_feature - vi_feature
         sub_ir_vi = sub_ir_vi + self.drop_path(
-            self.attn(self.norm1(sub_ir_vi), self.norm1(ir_feature), self.norm1(ir_feature)))
-        sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp(self.norm2(sub_ir_vi)))
+            self.attn_ir_vi(self.norm1_ir_vi(sub_ir_vi), self.norm1_ir_vi(ir_feature), self.norm1_ir_vi(ir_feature)))
+        sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp2(self.norm2_ir_vi(sub_ir_vi)))
 
         return sub_vi_ir.permute(0, 3, 1, 2), sub_ir_vi.permute(0, 3, 1, 2) # B, C, H, W
