@@ -15,7 +15,7 @@ from ultralytics.engine.trainer import BaseTrainer
 from ultralytics.models import yolo
 from ultralytics.nn.tasks import MultispectralDetectionModel
 from ultralytics.utils import (LOGGER, RANK, callbacks)
-from ultralytics.utils.autobatch import check_train_batch_size
+from ultralytics.utils.autobatch import check_train_batch_size_multiModal
 from ultralytics.utils.checks import check_amp, check_imgsz
 from ultralytics.utils.plotting import plot_images, plot_results, plot_labels
 from ultralytics.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, one_cycle,
@@ -82,7 +82,7 @@ class MultispectralDetectionTrainer(BaseTrainer):
 
         # Batch size
         if self.batch_size == -1 and RANK == -1:  # single-GPU only, estimate best batch size
-            self.args.batch = self.batch_size = check_train_batch_size(self.model, self.args.imgsz, self.amp)
+            self.args.batch = self.batch_size = check_train_batch_size_multiModal(self.model, self.args.imgsz, self.amp)
 
         # Dataloaders
         batch_size = self.batch_size // max(world_size, 1)
@@ -211,6 +211,6 @@ class MultispectralDetectionTrainer(BaseTrainer):
 
 
 if __name__ == '__main__':
-    args = dict(mode='train', epochs=3)
+    args = dict(mode='train', batch=4, epochs=50)
     trainer = MultispectralDetectionTrainer(overrides=args)
     trainer.train()
