@@ -191,12 +191,22 @@ class MultispectralDetectionTrainer(BaseTrainer):
         """Plots training samples with their annotations."""
         x = torch.split(batch['img'], 3, dim=1)
         rgb = x[0]
+        ir  = x[1]
         plot_images(images=rgb,
                     batch_idx=batch['batch_idx'],
                     cls=batch['cls'].squeeze(-1),
                     bboxes=batch['bboxes'],
                     paths=batch['im_file'],
-                    fname=self.save_dir / f'train_batch{ni}.jpg',
+                    fname=self.save_dir / f'train_rgb_batch{ni}.jpg',
+                    on_plot=self.on_plot)
+        for i, im_file in enumerate(batch['im_file']):
+            batch['im_file'][i] = im_file.replace('visible', 'infrared')
+        plot_images(images=ir,
+                    batch_idx=batch['batch_idx'],
+                    cls=batch['cls'].squeeze(-1),
+                    bboxes=batch['bboxes'],
+                    paths=batch['im_file'],
+                    fname=self.save_dir / f'train_ir_batch{ni}.jpg',
                     on_plot=self.on_plot)
 
     def plot_metrics(self):

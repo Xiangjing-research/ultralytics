@@ -14,7 +14,6 @@ from ultralytics.utils.checks import check_version
 from ultralytics.utils.instance import Instances
 from ultralytics.utils.metrics import bbox_ioa
 from ultralytics.utils.ops import segment2box
-
 from .utils import polygons2masks, polygons2masks_overlap
 
 
@@ -1111,13 +1110,6 @@ class ToTensor:
 
 class Mosaic_RGB_IR(Mosaic):
 
-    def _mix_transform(self, labels):
-        """Apply mixup transformation to the input image and labels."""
-        assert labels.get('rect_shape', None) is None, 'rect and mosaic are mutually exclusive.'
-        assert len(labels.get('mix_labels', [])), 'There are no other images for mosaic augment.'
-        final_labels = self._mosaic4(labels) if self.n == 4 else self._mosaic9(labels)
-        return final_labels
-
     def _mosaic4(self, labels):
         """Create a 2x2 image mosaic."""
         mosaic_labels = []
@@ -1156,6 +1148,8 @@ class Mosaic_RGB_IR(Mosaic):
         final_labels = self._cat_labels(mosaic_labels)
         final_labels['rgb_img'] = rgb_img4
         final_labels['ir_img'] = ir_img4
+        # cv2.imwrite("./_mosaic4_rgb_img4.jpg", rgb_img4)
+        # cv2.imwrite("./_mosaic4_ir_img4.jpg", ir_img4)
         return final_labels
 
     def _mosaic9(self, labels):
@@ -1257,7 +1251,7 @@ class LetterBox_RGB_IR(LetterBox):
 
         if shape[::-1] != new_unpad:  # resize
             rgb_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
-            ir_img = cv2.resize(rgb_img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            ir_img = cv2.resize(ir_img, new_unpad, interpolation=cv2.INTER_LINEAR)
 
         top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
         left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
@@ -1323,7 +1317,6 @@ class CopyPaste_RGB_IR(CopyPaste):
     def __call__(self, labels):
         """Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)."""
         instances = labels.pop('instances')
-        # for img_type in ['rgb_img', 'ir_img']:
         rgb_img = labels['rgb_img']
         ir_img = labels['ir_img']
         cls = labels['cls']
@@ -1335,7 +1328,7 @@ class CopyPaste_RGB_IR(CopyPaste):
             n = len(instances)
             _, w, _ = rgb_img.shape  # height, width, channels
             rgb_im_new = np.zeros(rgb_img.shape, np.uint8)
-            ir_im_new = np.zeros(rgb_img.shape, np.uint8)
+            ir_im_new = np.zeros(ir_img.shape, np.uint8)
 
             # Calculate ioa first then select indexes randomly
             ins_flip = deepcopy(instances)
@@ -1359,6 +1352,8 @@ class CopyPaste_RGB_IR(CopyPaste):
 
         labels['rgb_img'] = rgb_img
         labels['ir_img'] = ir_img
+        # cv2.imwrite("./CopyPaste_RGB_IR_rgb_img.jpg", rgb_img)
+        # cv2.imwrite("./CopyPaste_RGB_IR_ir_img.jpg", ir_img)
         labels['cls'] = cls
         labels['instances'] = instances
         return labels
@@ -1384,12 +1379,10 @@ class RandomPerspective_RGB_IR(RandomPerspective):
         # Make sure the coord formats are right
         instances.convert_bbox(format='xyxy')
         instances.denormalize(*rgb_img.shape[:2][::-1])
-        instances.denormalize(*ir_img.shape[:2][::-1])
         self.size = rgb_img.shape[1] + border[1] * 2, rgb_img.shape[0] + border[0] * 2  # w, h
         # M is affine matrix
         # scale for func:`box_candidates`
-        rgb_img, M, scale = self.affine_transform(rgb_img, border)
-        ir_img, M, scale = self.affine_transform(ir_img, border)
+        rgb_img, ir_img, M, scale = self.affine_transform(rgb_img, ir_img, border)
 
         bboxes = self.apply_bboxes(instances.bboxes, M)
 
@@ -1415,9 +1408,66 @@ class RandomPerspective_RGB_IR(RandomPerspective):
         labels['cls'] = cls[i]
         labels['rgb_img'] = rgb_img
         labels['ir_img'] = ir_img
+        # cv2.imwrite("./RandomPerspective_RGB_IR_rgb_img.jpg", rgb_img)
+        # cv2.imwrite("./RandomPerspective_RGB_IR_ir_img.jpg", ir_img)
         labels['resized_shape'] = rgb_img.shape[:2]
         return labels
 
+    def affine_transform(self, rgb_img, ir_img, border):
+        """
+        Applies a sequence of affine transformations centered around the image center.
+
+        Args:
+            img (ndarray): Input image.
+            border (tuple): Border dimensions.
+
+        Returns:
+            img (ndarray): Transformed image.
+            M (ndarray): Transformation matrix.
+            s (float): Scale factor.
+        """
+
+        # Center
+        C = np.eye(3, dtype=np.float32)
+
+        C[0, 2] = -rgb_img.shape[1] / 2  # x translation (pixels)
+        C[1, 2] = -rgb_img.shape[0] / 2  # y translation (pixels)
+
+        # Perspective
+        P = np.eye(3, dtype=np.float32)
+        P[2, 0] = random.uniform(-self.perspective, self.perspective)  # x perspective (about y)
+        P[2, 1] = random.uniform(-self.perspective, self.perspective)  # y perspective (about x)
+
+        # Rotation and Scale
+        R = np.eye(3, dtype=np.float32)
+        a = random.uniform(-self.degrees, self.degrees)
+        # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
+        s = random.uniform(1 - self.scale, 1 + self.scale)
+        # s = 2 ** random.uniform(-scale, scale)
+        R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
+
+        # Shear
+        S = np.eye(3, dtype=np.float32)
+        S[0, 1] = math.tan(random.uniform(-self.shear, self.shear) * math.pi / 180)  # x shear (deg)
+        S[1, 0] = math.tan(random.uniform(-self.shear, self.shear) * math.pi / 180)  # y shear (deg)
+
+        # Translation
+        T = np.eye(3, dtype=np.float32)
+        T[0, 2] = random.uniform(0.5 - self.translate, 0.5 + self.translate) * self.size[0]  # x translation (pixels)
+        T[1, 2] = random.uniform(0.5 - self.translate, 0.5 + self.translate) * self.size[1]  # y translation (pixels)
+
+        # Combined rotation matrix
+        M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
+        # Affine image
+        if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
+            if self.perspective:
+                rgb_img = cv2.warpPerspective(rgb_img, M, dsize=self.size, borderValue=(114, 114, 114))
+                ir_img = cv2.warpPerspective(ir_img, M, dsize=self.size, borderValue=(114, 114, 114))
+
+            else:  # affine
+                rgb_img = cv2.warpAffine(rgb_img, M[:2], dsize=self.size, borderValue=(114, 114, 114))
+                ir_img = cv2.warpAffine(ir_img, M[:2], dsize=self.size, borderValue=(114, 114, 114))
+        return rgb_img, ir_img, M, s
 
 class Albumentations_RGB_IR(Albumentations):
     def __call__(self, labels):

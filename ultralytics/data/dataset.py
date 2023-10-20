@@ -353,7 +353,6 @@ class MultiModalDataset(Dataset):  # for training/testing
     多模态数据集 （RGB 和 IR）
     """
 
-
     def __init__(self, data=None, use_segments=False, use_keypoints=False,
                  rgb_path=None,
                  ir_path=None,
@@ -403,7 +402,7 @@ class MultiModalDataset(Dataset):  # for training/testing
 
         # Buffer thread for mosaic images
         self.buffer = []  # buffer size = batch size
-        self.max_buffer_length = min((self.ni, self.batch_size * 8, 1000)) if self.augment else 0
+        self.max_buffer_length = min((self.ni, self.batch_size * 8 * 2, 1000)) if self.augment else 0
 
         # Cache stuff
         if cache == 'ram' and not self.check_cache_ram():
@@ -455,7 +454,7 @@ class MultiModalDataset(Dataset):  # for training/testing
             assert cache['version'] == DATASET_CACHE_VERSION  # matches current version
             assert cache['hash'] == get_hash(self.label_files + im_files)  # identical hash
         except (FileNotFoundError, AssertionError, AttributeError):
-            cache, exists = self.cache_labels(im_files,cache_path), False  # run cache ops
+            cache, exists = self.cache_labels(im_files, cache_path), False  # run cache ops
 
         # Display cache
         nf, nm, ne, nc, n = cache.pop('results')  # found, missing, empty, corrupt, total
@@ -690,6 +689,7 @@ class MultiModalDataset(Dataset):  # for training/testing
 
     def cache_images(self, cache):
         """Cache images to memory or disk."""
+        print('start to cache_images')
         b, gb = 0, 1 << 30  # bytes of cached images, bytes per gigabytes
         fcn = self.cache_images_to_disk if cache == 'disk' else self.load_image
         with ThreadPool(NUM_THREADS) as pool:
@@ -712,10 +712,14 @@ class MultiModalDataset(Dataset):  # for training/testing
         nb = bi[-1] + 1  # number of batches
 
         s = np.array([x.pop('shape') for x in self.rgb_labels])  # hw
+        for x in self.ir_labels:
+            x.pop('shape')
         ar = s[:, 0] / s[:, 1]  # aspect ratio
         irect = ar.argsort()
         self.rgb_im_files = [self.rgb_im_files[i] for i in irect]
         self.rgb_labels = [self.rgb_labels[i] for i in irect]
+        self.ir_im_files = [self.ir_im_files[i] for i in irect]
+        self.ir_labels = [self.ir_labels[i] for i in irect]
         ar = ar[irect]
 
         # Set training image shapes
