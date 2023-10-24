@@ -337,40 +337,11 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 
         validator(model=args['model'])
 
-def getModelSize(model):
-    param_size = 0
-    param_sum = 0
-    for param in model.parameters():
-        param_size += param.nelement() * param.element_size()
-        param_sum += param.nelement()
-    buffer_size = 0
-    buffer_sum = 0
-    for buffer in model.buffers():
-        buffer_size += buffer.nelement() * buffer.element_size()
-        buffer_sum += buffer.nelement()
-    all_size = (param_size + buffer_size) / 1024 / 1024
-    print('模型总大小为：{:.3f}MB'.format(all_size))
-    return (param_size, param_sum, buffer_size, buffer_sum, all_size)
-
 if __name__ == '__main__':
     # validator = MultispectralDetectionValidator(args=DEFAULT_CFG)
     # validator(model=DEFAULT_CFG.model)
     from ultralytics import YOLO
 
-    yolo = YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task)
-    getModelSize(yolo)
+    yolo = YOLO(model='runs/detect2/weights/best.pt', task=DEFAULT_CFG.task)
     yolo.val()
-    # YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task).train()
 
-    #
-    # x1 = torch.rand(3,3,3)
-    # print(x1)
-    # x2 = torch.rand(3,3,3)
-    # print(x2)
-    # x = torch.cat([x1,x2],dim=0)
-    # print(x)
-    # print(x.shape)
-    # # y = torch.split(x,3,dim=0)
-    # x = x.split(split_size=3, dim=0)
-    # rgb, ir = x[0],x[1]
-    # print(rgb.shape)
