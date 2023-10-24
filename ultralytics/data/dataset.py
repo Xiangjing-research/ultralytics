@@ -383,14 +383,13 @@ class MultiModalDataset(Dataset):  # for training/testing
         self.rgb_im_files = self.get_img_files(self.rgb_path)
         self.ir_im_files = self.get_img_files(self.ir_path)
 
-        self.rgb_labels = self.get_labels(self.rgb_im_files)
-        self.rgb_im_files = [lb['im_file'] for lb in self.rgb_labels]  # update im_files
+        self.labels = self.get_labels(self.rgb_im_files)
+        self.rgb_im_files = [lb['im_file'] for lb in self.labels]  # update im_files
 
-        self.ir_labels = self.get_labels(self.ir_im_files)
-        self.ir_im_files = [lb['im_file'] for lb in self.ir_labels]  # update im_files
+        self.get_labels(self.ir_im_files)
 
         self.update_labels(include_class=classes)  # single_cls and include_class
-        self.ni = len(self.rgb_labels)  # number of images
+        self.ni = len(self.labels)  # number of images
         self.rect = rect
         self.hyp = hyp
         self.batch_size = batch_size
@@ -418,6 +417,25 @@ class MultiModalDataset(Dataset):  # for training/testing
 
         # Transforms
         self.transforms = self.build_transforms(hyp=hyp)
+
+    def update_labels(self, include_class: Optional[list]):
+        """include_class, filter labels to include only these classes (optional)."""
+        include_class_array = np.array(include_class).reshape(1, -1)
+        for i in range(len(self.labels)):
+            if include_class is not None:
+                cls = self.labels[i]['cls']
+                bboxes = self.labels[i]['bboxes']
+                segments = self.labels[i]['segments']
+                keypoints = self.labels[i]['keypoints']
+                j = (cls == include_class_array).any(1)
+                self.labels[i]['cls'] = cls[j]
+                self.labels[i]['bboxes'] = bboxes[j]
+                if segments:
+                    self.labels[i]['segments'] = [segments[si] for si, idx in enumerate(j) if idx]
+                if keypoints is not None:
+                    self.labels[i]['keypoints'] = keypoints[j]
+            if self.single_cls:
+                self.labels[i]['cls'][:, 0] = 0
 
     def get_img_files(self, img_path):
         """Read image files."""
@@ -547,10 +565,9 @@ class MultiModalDataset(Dataset):  # for training/testing
     def get_image_and_label(self, index):
         """Get and return label information from the dataset."""
         label = deepcopy(
-            self.rgb_labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
+            self.labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
         label.pop('shape', None)  # shape is for rect, remove it
         label['rgb_img'], label['ir_img'], label['ori_shape'], label['resized_shape'] = self.load_image(index)
-        # label['img'], label['ir_img'], label['ori_shape'], label['resized_shape'] = self.load_image(index)
         label['ratio_pad'] = (label['resized_shape'][0] / label['ori_shape'][0],
                               label['resized_shape'][1] / label['ori_shape'][1])  # for evaluation
         if self.rect:
@@ -575,33 +592,9 @@ class MultiModalDataset(Dataset):  # for training/testing
             new_batch['batch_idx'][i] += i  # add target image index for build_targets()
         new_batch['batch_idx'] = torch.cat(new_batch['batch_idx'], 0)
         #rgb和ir拼接在一起
-        new_batch['img'] = torch.cat([new_batch['rgb_img'], new_batch['ir_img']], dim=1)
-        new_batch.pop('rgb_img')
-        new_batch.pop('ir_img')
+        new_batch['img'] = torch.cat([new_batch.pop('rgb_img'), new_batch.pop('ir_img')], dim=1)
         return new_batch
 
-    def update_labels(self, include_class: Optional[list]):
-        """include_class, filter labels to include only these classes (optional)."""
-        include_class_array = np.array(include_class).reshape(1, -1)
-        for i in range(len(self.rgb_labels)):
-            if include_class is not None:
-                cls = self.rgb_labels[i]['cls']
-                bboxes = self.rgb_labels[i]['bboxes']
-                segments = self.rgb_labels[i]['segments']
-                keypoints = self.rgb_labels[i]['keypoints']
-                j = (cls == include_class_array).any(1)
-                self.rgb_labels[i]['cls'] = cls[j]
-                self.rgb_labels[i]['bboxes'] = bboxes[j]
-                self.ir_labels[i]['cls'] = cls[j]
-                self.ir_labels[i]['bboxes'] = bboxes[j]
-                if segments:
-                    self.labels[i]['segments'] = [segments[si] for si, idx in enumerate(j) if idx]
-                if keypoints is not None:
-                    self.rgb_labels[i]['keypoints'] = keypoints[j]
-                    self.ir_labels[i]['keypoints'] = keypoints[j]
-            if self.single_cls:
-                self.rgb_labels[i]['cls'][:, 0] = 0
-                self.ir_labels[i]['cls'][:, 0] = 0
 
     def build_transforms(self, hyp=None):
         """Builds and appends transforms to the list."""
@@ -711,15 +704,12 @@ class MultiModalDataset(Dataset):  # for training/testing
         bi = np.floor(np.arange(self.ni) / self.batch_size).astype(int)  # batch index
         nb = bi[-1] + 1  # number of batches
 
-        s = np.array([x.pop('shape') for x in self.rgb_labels])  # hw
-        for x in self.ir_labels:
-            x.pop('shape')
+        s = np.array([x.pop('shape') for x in self.labels])  # hw
         ar = s[:, 0] / s[:, 1]  # aspect ratio
         irect = ar.argsort()
         self.rgb_im_files = [self.rgb_im_files[i] for i in irect]
-        self.rgb_labels = [self.rgb_labels[i] for i in irect]
+        self.labels = [self.labels[i] for i in irect]
         self.ir_im_files = [self.ir_im_files[i] for i in irect]
-        self.ir_labels = [self.ir_labels[i] for i in irect]
         ar = ar[irect]
 
         # Set training image shapes
