@@ -4,9 +4,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-__all__ = ('DFMSDABlock', 'Add','Add2')
+__all__ = ('DFMSDABlock', 'Add', 'Add2')
 
-from ultralytics.nn.modules.DFMSDA import DFMSDABlock
+from ultralytics.nn.modules.df_msda import DFMSDABlock
 
 
 class Add(nn.Module):
