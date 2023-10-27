@@ -6,7 +6,7 @@ import torch.nn as nn
 
 __all__ = ('DFMSDABlock', 'Add','Add2')
 
-from ultralytics.nn.modules.DMF_MultiDilatelocalAttention import DFMSDABlock
+from ultralytics.nn.modules.DFMSDA import DFMSDABlock
 
 
 class Add(nn.Module):

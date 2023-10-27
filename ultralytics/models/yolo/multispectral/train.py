@@ -28,10 +28,10 @@ class MultispectralDetectionTrainer(BaseTrainer):
 
     Example:
         ```python
-        from ultralytics.models.yolo.detect import DetectionTrainer
+        from ultralytics.models.yolo.multispectral import MultispectralDetectionTrainer
 
         args = dict(model='yolov8n.pt', data='coco8.yaml', epochs=3)
-        trainer = DetectionTrainer(overrides=args)
+        trainer = MultispectralDetectionTrainer(overrides=args)
         trainer.train()
         ```
     """
