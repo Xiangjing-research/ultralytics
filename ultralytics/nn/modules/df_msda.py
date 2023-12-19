@@ -1,7 +1,9 @@
 # YOLOv5 common modules
+from functools import partial
+from typing import List
 
+import torch
 import torch.nn as nn
-from torch import Tensor
 
 from timm.models.layers import DropPath
 
@@ -50,15 +52,15 @@ class DilateAttention(nn.Module):
         v = self.unfold(v).reshape(
             [B, d // self.head_dim, self.head_dim, self.kernel_size * self.kernel_size, H * W]).permute(0, 1, 4, 3,
                                                                                                         2)  # B,h,N,k*k,d
-        x = (attn @ v).transpose(1, 2).reshape(B, H, W, d)
+        x = (attn @ v).transpose(1, 2).reshape(B, d, H, W)
         return x
 
 
 class MultiDilatelocalAttention(nn.Module):
-    ''' 差分模态特征 DMF'''
-    ''' Difference Feature MultiDilatelocalAttention '''
-    ''' 多模态差分特征 DilateAttention Cross-Modality Difference Feature  Dilateformer CMDF'''
-    """ Self attention Layer"""
+    '''
+    input # B, C, H, W
+    output # B, C, H, W
+    '''
 
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., kernel_size=3,
                  dilation=None):
@@ -77,116 +79,98 @@ class MultiDilatelocalAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, q_mtrix, k_mtrix, v_mtrix):
-        B, H, W, C = q_mtrix.shape  # ([8, 96, 56, 56])
-        q_mtrix = q_mtrix.permute(0, 3, 1, 2)  # B, C, H, W
-        k_mtrix = k_mtrix.permute(0, 3, 1, 2)  # B, C, H, W
-        v_mtrix = v_mtrix.permute(0, 3, 1, 2)  # B, C, H, W
 
-        q, k, v = self.q(q_mtrix), self.k(k_mtrix), self.v(v_mtrix),
-        q = q.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3,
-                                                                                  4)  # num_dilation, B, C//num_dilation , H, W
-        k = k.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)
-        v = v.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)
-        q_mtrix = q_mtrix.reshape(self.num_dilation, B, H, W, C // self.num_dilation)
+
+    def forward(self, q_mtrix, k_mtrix, v_mtrix):
+        B, H, W, C = q_mtrix.shape  # B, H, W, C
+        q_mtrix = self.q(q_mtrix.permute(0, 3, 1, 2)).reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)  # num_dilation, B, C//num_dilation , H, W
+        k_mtrix =  self.k(k_mtrix.permute(0, 3, 1, 2)).reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)  # num_dilation, B, C//num_dilation , H, W
+        v_mtrix = self.v(v_mtrix.permute(0, 3, 1, 2)).reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 2, 3, 4)  # num_dilation, B, C//num_dilation , H, W
+
         for i in range(self.num_dilation):
-            q_mtrix[i] = self.dilate_attention[i](q[i], k[i], v[i])  # B, H, W,C//num_dilation
-        q_mtrix = q_mtrix.permute(1, 2, 3, 0, 4).reshape(B, H, W, C)
+            q_mtrix[i] = self.dilate_attention[i](q_mtrix[i], k_mtrix[i], v_mtrix[i])  # num_dilation, B, H, W, C//num_dilation
+        q_mtrix = q_mtrix.permute(1, 2, 3, 0, 4).reshape(B, H, W, C)  # B, H, W, C
         q_mtrix = self.proj(q_mtrix)
         q_mtrix = self.proj_drop(q_mtrix)
-        return q_mtrix
+        return q_mtrix  # B, H, W, C
 
-
-# class DFMSDABlock(nn.Module):
-#     ''' 差分模态特征 DMF'''
-#     ''' Difference Feature MultiDilatelocalAttention  DFMDA'''
-#     ''' 多模态差分特征  Cross-Modality Difference Feature DilateAttention CMDFDA'''
-#     """ Self attention Layer"""
-#
-#     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-#                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, kernel_size=3, dilation=[1, 2, 3, 4]):
-#         super().__init__()
-#         self.dim = dim
-#         self.num_heads = num_heads
-#         self.mlp_ratio = mlp_ratio
-#         self.kernel_size = kernel_size
-#         self.dilation = dilation
-#         self.norm1 = norm_layer(dim)
-#         self.attn = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
-#                                               attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
-#         # self.attn_ir_vi = MultiDilatelocalAttention(dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
-#         #                                             qk_scale=qk_scale,
-#         #                                             attn_drop=attn_drop, drop=drop, drop_path=drop_path,
-#         #                                             act_layer=act_layer,
-#         #                                             norm_layer=norm_layer, kernel_size=kernel_size, dilation=dilation)
-#         self.drop_path = DropPath(
-#             drop_path) if drop_path > 0. else nn.Identity()
-#         self.norm2 = norm_layer(dim)
-#         mlp_hidden_dim = int(dim * mlp_ratio)
-#         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
-#                        act_layer=act_layer, drop=drop)
-#
-#     def forward(self, x):
-#         vi_feature, ir_feature = x[0], x[1]
-#         vi_feature = vi_feature.permute(0, 2, 3, 1)  # B, H, W, C
-#         ir_feature = ir_feature.permute(0, 2, 3, 1)  # B, H, W, C
-#         sub_vi_ir = vi_feature - ir_feature
-#
-#         sub_vi_ir = sub_vi_ir + self.drop_path(
-#             self.attn(self.norm1(sub_vi_ir), self.norm1(vi_feature), self.norm1(vi_feature)))
-#         sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp(self.norm2(sub_vi_ir)))
-#
-#         sub_ir_vi = ir_feature - vi_feature
-#         sub_ir_vi = sub_ir_vi + self.drop_path(
-#             self.attn(self.norm1(sub_ir_vi), self.norm1(ir_feature), self.norm1(ir_feature)))
-#         sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp(self.norm2(sub_ir_vi)))
-#
-#         return sub_vi_ir.permute(0, 3, 1, 2), sub_ir_vi.permute(0, 3, 1, 2) # B, C, H, W
 
 class DFMSDABlock(nn.Module):
-    ''' 差分模态特征 DMF'''
+    ''' 差分模态特征'''
     ''' Difference Feature MultiDilatelocalAttention  DFMDA'''
     ''' 多模态差分特征  Cross-Modality Difference Feature DilateAttention CMDFDA'''
     """ Self attention Layer"""
 
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, kernel_size=3, dilation=[1, 2, 3, 4]):
+    def __init__(self, dim, num_heads, kernel_size=3, dilation=None, mlp_ratio=2., qkv_bias=True, qk_scale=None,
+                 drop=0., attn_drop=0.,
+                 drop_path=0.1, act_layer=nn.GELU, norm_layer=partial(nn.LayerNorm, eps=1e-6)):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
         self.kernel_size = kernel_size
         self.dilation = dilation
-        self.norm1_vi_ir = norm_layer(dim)
-        self.norm1_ir_vi = norm_layer(dim)
+        self.norm1_vi = norm_layer(dim)
+        self.norm1_ir = norm_layer(dim)
         self.attn_vi_ir = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                                              attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
+                                                    attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
         self.attn_ir_vi = MultiDilatelocalAttention(dim, num_heads=num_heads, qkv_bias=qkv_bias,
                                                     qk_scale=qk_scale,
                                                     attn_drop=attn_drop, kernel_size=kernel_size, dilation=dilation)
         self.drop_path = DropPath(
             drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2_vi_ir = norm_layer(dim)
-        self.norm2_ir_vi = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
-                       act_layer=act_layer, drop=drop)
-        self.mlp2 = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
-                       act_layer=act_layer, drop=drop)
+        self.norm2_vi = norm_layer(dim)
+        self.norm2_ir = norm_layer(dim)
+        # mlp_hidden_dim = int(dim * mlp_ratio)
+        # self.mlp1 = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
+        #                 act_layer=act_layer, drop=drop)
+        # self.mlp2 = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
+        #                 act_layer=act_layer, drop=drop)
 
     def forward(self, x):
-        vi_feature, ir_feature = x[0], x[1]
-        vi_feature = vi_feature.permute(0, 2, 3, 1)  # B, H, W, C
-        ir_feature = ir_feature.permute(0, 2, 3, 1)  # B, H, W, C
-        sub_vi_ir = vi_feature - ir_feature
+        vi_feature, ir_feature = x[0], x[1]  # B, C, H, W
+        vi_feature = self.norm1_vi(vi_feature.permute(0, 2, 3, 1))  # B, H, W, C
+        ir_feature = self.norm1_ir(ir_feature.permute(0, 2, 3, 1))  # B, H, W, C
+        sub_vi_ir = vi_feature - ir_feature  # B, H, W, C
 
-        sub_vi_ir = sub_vi_ir + self.drop_path(
-            self.attn_vi_ir(self.norm1_vi_ir(sub_vi_ir), self.norm1_vi_ir(vi_feature), self.norm1_vi_ir(vi_feature)))
-        sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp(self.norm2_vi_ir(sub_vi_ir)))
+        sub_vi_ir = sub_vi_ir + self.drop_path(self.attn_vi_ir(sub_vi_ir, vi_feature, vi_feature))
+        # sub_vi_ir = sub_vi_ir + self.drop_path(self.mlp1(self.norm2_vi(sub_vi_ir)))
 
         sub_ir_vi = ir_feature - vi_feature
-        sub_ir_vi = sub_ir_vi + self.drop_path(
-            self.attn_ir_vi(self.norm1_ir_vi(sub_ir_vi), self.norm1_ir_vi(ir_feature), self.norm1_ir_vi(ir_feature)))
-        sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp2(self.norm2_ir_vi(sub_ir_vi)))
+        sub_ir_vi = sub_ir_vi + self.drop_path(self.attn_ir_vi(sub_ir_vi, ir_feature, ir_feature))
+        # sub_ir_vi = sub_ir_vi + self.drop_path(self.mlp2(self.norm2_ir(sub_ir_vi)))
 
-        return sub_vi_ir.permute(0, 3, 1, 2), sub_ir_vi.permute(0, 3, 1, 2) # B, C, H, W
+        return sub_vi_ir.permute(0, 3, 1, 2), sub_ir_vi.permute(0, 3, 1, 2)  # B, C, H, W
+
+
+# if __name__ == '__main__':
+    # b1 = DFMSDABlock(256, 8, 5, [1, 2, 4, 8])
+    # b2 = DFMSDABlock(512, 16, 5, [1, 2, 3, 4])
+    # b3 = DFMSDABlock(512, 32, 3, [1, 2, 3, 4])
+
+    # b1 = DFMSDABlock(256, 4, 3, [1, 2, 3, 4])
+    # b2 = DFMSDABlock(512, 8, 3, [1, 2, 3, 4])
+    # b3 = DFMSDABlock(1024, 16, 3, [1, 2, 3, 4])
+
+    # x1 = [torch.rand(1, 256, 80, 80), torch.rand(1, 256, 80, 80)]
+    # x2 = [torch.rand(1, 512, 40, 40), torch.rand(1, 512, 40, 40)]
+    #
+    # x3 = [torch.rand(1, 512, 20, 20), torch.rand(1, 512, 20, 20)]
+
+
+
+    # b1(x1)
+    # from thop import profile
+    # from thop import clever_format
+    #
+    # flops, params = profile(b1, inputs=(x1,))
+    # flops, params = clever_format([flops, params], "%.3f")
+    # print(f'flops={flops},params={params}')
+    #
+    # flops, params = profile(b2, inputs=(x2,))
+    # flops, params = clever_format([flops, params], "%.3f")
+    # print(f'flops={flops},params={params}')
+    #
+    # flops, params = profile(b3, inputs=(x3,))
+    # flops, params = clever_format([flops, params], "%.3f")
+    # print(f'flops={flops},params={params}')
