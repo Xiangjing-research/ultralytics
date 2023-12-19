@@ -1,6 +1,7 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 import json
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ import torch
 
 from ultralytics.data import build_dataloader, build_yolo_dataset, converter
 from ultralytics.engine.validator import BaseValidator
+from ultralytics.nn.modules import GSConv, C2f, C2f_GhostNetV2
 from ultralytics.utils import LOGGER, ops, DEFAULT_CFG
 from ultralytics.utils.checks import check_requirements
 from ultralytics.utils.metrics import ConfusionMatrix, DetMetrics, box_iou
@@ -284,7 +286,18 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 
 
 if __name__ == '__main__':
+
     from ultralytics import YOLO
 
-    yolo = YOLO(model=DEFAULT_CFG.model, task=DEFAULT_CFG.task)
-    yolo.val()
+    yolo = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_RefConv.yaml', task='detect')
+    # c2f = C2f(c1=128, c2=128, shortcut=True)
+    # c2f = C2f_GhostNetV2(c1=128, c2=128, shortcut=True)
+    # c2f.cuda()
+    # x1 = torch.rand(8, 3, 640, 640).cuda()
+    #
+    # start = time.perf_counter()
+    # y = yolo(x1)
+    #
+    # end = time.perf_counter()
+    #
+    # print("运行时间：", (end - start) * 1000, "毫秒")

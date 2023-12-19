@@ -86,9 +86,11 @@ class MultispectralDetectionTrainer(BaseTrainer):
 
         # Dataloaders
         batch_size = self.batch_size // max(world_size, 1)
-        self.train_loader = self.get_dataloader(self.trainset[0], self.trainset[1], batch_size=batch_size, rank=RANK, mode='train')
+        self.train_loader = self.get_dataloader(self.trainset[0], self.trainset[1], batch_size=batch_size, rank=RANK,
+                                                mode='train')
         if RANK in (-1, 0):
-            self.test_loader = self.get_dataloader(self.testset[0], self.testset[1], batch_size=batch_size * 2, rank=-1, mode='val')
+            self.test_loader = self.get_dataloader(self.testset[0], self.testset[1], batch_size=batch_size * 2, rank=-1,
+                                                   mode='val')
             self.validator = self.get_validator()
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix='val')
             self.metrics = dict(zip(metric_keys, [0] * len(metric_keys)))
@@ -168,7 +170,8 @@ class MultispectralDetectionTrainer(BaseTrainer):
     def get_validator(self):
         """Returns a DetectionValidator for YOLO model validation."""
         self.loss_names = 'box_loss', 'cls_loss', 'dfl_loss'
-        return yolo.multispectral.MultispectralDetectionValidator(self.test_loader, save_dir=self.save_dir, args=copy(self.args))
+        return yolo.multispectral.MultispectralDetectionValidator(self.test_loader, save_dir=self.save_dir,
+                                                                  args=copy(self.args))
 
     def label_loss_items(self, loss_items=None, prefix='train'):
         """
@@ -191,7 +194,7 @@ class MultispectralDetectionTrainer(BaseTrainer):
         """Plots training samples with their annotations."""
         x = torch.split(batch['img'], 3, dim=1)
         rgb = x[0]
-        ir  = x[1]
+        ir = x[1]
         plot_images(images=rgb,
                     batch_idx=batch['batch_idx'],
                     cls=batch['cls'].squeeze(-1),
@@ -221,6 +224,10 @@ class MultispectralDetectionTrainer(BaseTrainer):
 
 
 if __name__ == '__main__':
-    args = dict(mode='train', batch=4, epochs=1)
+    from ultralytics.models.yolo.multispectral import MultispectralDetectionTrainer
+
+    args = dict(task='multispectral', mode='train', model='../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA.yaml',
+                data=' ../../../cfg/datasets/LLVIP.yaml', epochs=50, batch=4, project='v8_multispectral',
+                name='train-GhostNetV2-DFMDA-LLVIP')
     trainer = MultispectralDetectionTrainer(overrides=args)
     trainer.train()

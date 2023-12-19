@@ -338,10 +338,8 @@ def val(cfg=DEFAULT_CFG, use_python=False):
         validator(model=args['model'])
 
 if __name__ == '__main__':
-    # validator = MultispectralDetectionValidator(args=DEFAULT_CFG)
-    # validator(model=DEFAULT_CFG.model)
     from ultralytics import YOLO
 
-    yolo = YOLO(model='runs/detect2/weights/best.pt', task=DEFAULT_CFG.task)
-    yolo.val()
+    model = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA-2.yaml', task='multispectral')
+    # model.val(data='../../../cfg/datasets/M3FD-infrared.yaml')
 

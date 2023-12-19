@@ -347,7 +347,10 @@ class BaseTrainer:
                         else self.loss_items
 
                 # Backward
+                # start = time.perf_counter()
                 self.scaler.scale(self.loss).backward()
+                # end = time.perf_counter()
+                # print("Backward运行时间：", (end - start) * 1000, "毫秒")
 
                 # Optimize - https://pytorch.org/docs/master/notes/amp_examples.html
                 if ni - last_opt_step >= self.accumulate:

@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, Add, Add2, DFMSDABlock)
+                                    RTDETRDecoder, Segment, Add, Add2, DFMSDABlock, C2f_GhostConv, C2f_GhostNetV2, GSConv, C2f_RefConv, C2f_Faster_PConv)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -683,7 +683,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
 
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
-                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3):
+                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, GSConv, C2f_RefConv, C2f_Faster_PConv):
             c1, c2 = ch[f], args[0]
             if f == -2:
                 c1 = 3
@@ -691,7 +691,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3):
+            if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, C2f_RefConv, C2f_Faster_PConv):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -718,7 +718,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c2, args[1]]
         elif m is DFMSDABlock:
             c2 = ch[f[0]]
-            args = [c2, args[1]]
+            args = [c2, *args[-3:]]
         elif m in (Detect, Segment, Pose):
             args.append([ch[x] for x in f])
             if m is Segment:
@@ -848,7 +848,7 @@ def guess_model_task(model):
 class MultispectralDetectionModel(BaseModel):
     """YOLOv8 Multispectral detection model."""
 
-    def __init__(self, cfg='yolov8n.yaml', ch=3, nc=None, verbose=True):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov8l-DFMDA.yaml', ch=3, nc=None, verbose=True):  # model, input channels, number of classes
         super().__init__()
         self.yaml = cfg if isinstance(cfg, dict) else yaml_model_load(cfg)  # cfg dict
 
@@ -894,6 +894,7 @@ class MultispectralDetectionModel(BaseModel):
         Returns:
             (torch.Tensor): The last output of the model.
         """
+        # profile = True
         #将输入的img分成rgb和ir
         x = torch.split(x, 3, dim=1)
         x, ir = x[0], x[1]
@@ -903,11 +904,14 @@ class MultispectralDetectionModel(BaseModel):
             if m.f != -1:  # if not from previous layer
                 if m.f != -2:
                     x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
-            if profile:
-                self._profile_one_layer(m, x, dt)
+            # if profile:
             if m.f == -2:
+                if profile:
+                    self._profile_one_layer(m, ir, dt)
                 x = m(ir)
             else:
+                if profile:
+                    self._profile_one_layer(m, x, dt)
                 x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             if visualize:

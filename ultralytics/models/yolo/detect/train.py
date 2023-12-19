@@ -115,3 +115,11 @@ class DetectionTrainer(BaseTrainer):
         boxes = np.concatenate([lb['bboxes'] for lb in self.train_loader.dataset.labels], 0)
         cls = np.concatenate([lb['cls'] for lb in self.train_loader.dataset.labels], 0)
         plot_labels(boxes, cls.squeeze(), names=self.data['names'], save_dir=self.save_dir, on_plot=self.on_plot)
+
+
+if __name__ == '__main__':
+    args = dict(task='detect', mode='train', model='../../../cfg/models/v8/yolov8-C2f_RefConv.yaml',
+                data=' ../../../cfg/datasets/LLVIP-vis.yaml', epochs=50, batch=8, project='v8_detect',
+                name='train-GhostNetV2-LLVIP')
+    trainer = DetectionTrainer(overrides=args)
+    trainer.train()

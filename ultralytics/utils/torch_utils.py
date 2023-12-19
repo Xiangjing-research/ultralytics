@@ -273,8 +273,9 @@ def get_flops(model, imgsz=640):
     try:
         model = de_parallel(model)
         p = next(model.parameters())
-        stride = max(int(model.stride.max()), 32) if hasattr(model, 'stride') else 32  # max stride
-        if isinstance(model, MultispectralDetectionModel):
+        # stride = max(int(model.stride.max()), 32) if hasattr(model, 'stride') else 32  # max stride
+        stride = 640
+        if str(type(model)) == "<class 'ultralytics.nn.tasks.MultispectralDetectionModel'>":
             im = torch.empty((1, 6, stride, stride), device=p.device)  # input image in BCHW format
         else:
             im = torch.empty((1, p.shape[1], stride, stride), device=p.device)  # input image in BCHW format
