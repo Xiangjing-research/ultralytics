@@ -1,8 +1,15 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
+from copy import deepcopy
+from pathlib import Path
+
+import cv2
+import torch
 
 from ultralytics.engine.results import Results
 from ultralytics.models.yolo.detect import DetectionPredictor
-from ultralytics.utils import ops
+from ultralytics.utils import ops, LOGGER, colorstr
+from ultralytics.utils.files import increment_path
+from ultralytics.utils.torch_utils import smart_inference_mode
 
 
 class MultispectralDetectionPredictor(DetectionPredictor):
@@ -31,7 +38,7 @@ class MultispectralDetectionPredictor(DetectionPredictor):
 
         if not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
-
+        preds = [preds[0], deepcopy(preds[0])]
         results = []
         for i, pred in enumerate(preds):
             orig_img = orig_imgs[i]
@@ -39,3 +46,20 @@ class MultispectralDetectionPredictor(DetectionPredictor):
             img_path = self.batch[0][i]
             results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
         return results
+
+    def inference(self, im, *args, **kwargs):
+        """Runs inference on a given image using the specified model and arguments."""
+        visualize = increment_path(self.save_dir / Path(self.batch[0][0]).stem,
+                                   mkdir=True) if self.args.visualize and (not self.source_type.tensor) else False
+        rgb, ir = im.split(1, 0)
+        return self.model(torch.cat([rgb, ir], dim=1), augment=self.args.augment, visualize=visualize)
+
+
+
+if __name__ == '__main__':
+    from ultralytics import YOLO
+
+    model = YOLO(model='v8_multispectral/train-C2f_FasterNet-DFMDA-M3FD/weights/best.pt', task='multispectral')
+    model.predict(
+        ['D:\\M3FD-Person\\images\\visible\\00025.png', 'D:\\M3FD-Person\\images\\infrared\\00025.png'],
+        save=True, name='predict')

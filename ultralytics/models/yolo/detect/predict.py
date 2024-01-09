@@ -39,3 +39,11 @@ class DetectionPredictor(BasePredictor):
             img_path = self.batch[0][i]
             results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
         return results
+
+if __name__ == '__main__':
+    from ultralytics import YOLO
+
+    model = YOLO(model='weights/yolov8l.pt', task='detect')
+    model.predict(
+        source=['D:\\M3FD-Person\\images\\visible\\00025.png', 'D:\\M3FD-Person\\images\\infrared\\00025.png'],
+        save=True, name='predict')

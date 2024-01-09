@@ -241,7 +241,7 @@ class BasePredictor:
         # Warmup model
         if not self.done_warmup:
             ch = 3
-            if self.args.task is 'multispectral':
+            if self.args.task == 'multispectral':
                 ch = 6
             self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, ch, *self.imgsz))
             self.done_warmup = True
@@ -284,7 +284,8 @@ class BasePredictor:
                 if self.args.show and self.plotted_img is not None:
                     self.show(p)
                 if self.args.save and self.plotted_img is not None:
-                    self.save_preds(vid_cap, i, str(self.save_dir / p.name))
+                    im_name = p.parts[3] + '_' + p.name
+                    self.save_preds(vid_cap, i, str(self.save_dir / im_name))
 
             self.run_callbacks('on_predict_batch_end')
             yield from self.results
