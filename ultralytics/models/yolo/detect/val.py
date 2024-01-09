@@ -77,7 +77,7 @@ class DetectionValidator(BaseValidator):
 
     def get_desc(self):
         """Return a formatted string summarizing class metrics of YOLO model."""
-        return ('%22s' + '%11s' * 6) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50', 'mAP50-95)')
+        return ('%22s' + '%11s' * 8) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50','mAP75','mAP90', 'mAP50-95)')
 
     def postprocess(self, preds):
         """Apply Non-maximum suppression to prediction outputs."""
@@ -264,7 +264,7 @@ class DetectionValidator(BaseValidator):
                 eval.evaluate()
                 eval.accumulate()
                 eval.summarize()
-                stats[self.metrics.keys[-1]], stats[self.metrics.keys[-2]] = eval.stats[:2]  # update mAP50-95 and mAP50
+                stats[self.metrics.keys[-1]],stats[self.metrics.keys[-2]],stats[self.metrics.keys[-3]], stats[self.metrics.keys[-4]] = eval.stats[:4]  # update mAP50-95 and mAP50
             except Exception as e:
                 LOGGER.warning(f'pycocotools unable to run: {e}')
         return stats

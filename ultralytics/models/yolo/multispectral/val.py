@@ -12,7 +12,7 @@ from ultralytics.data.utils import check_det_dataset, check_cls_dataset
 from ultralytics.engine.validator import BaseValidator
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils import LOGGER, ops, DEFAULT_CFG, colorstr, emojis, callbacks, TQDM
-from ultralytics.utils.checks import check_imgsz
+from ultralytics.utils.checks import check_imgsz, check_requirements
 from ultralytics.utils.metrics import DetMetrics, ConfusionMatrix, box_iou
 from ultralytics.utils.ops import Profile
 from ultralytics.utils.plotting import plot_images, output_to_target
@@ -79,7 +79,7 @@ class MultispectralDetectionValidator(BaseValidator):
 
     def get_desc(self):
         """Return a formatted string summarizing class metrics of YOLO model."""
-        return ('%22s' + '%11s' * 6) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50', 'mAP50-95)')
+        return ('%22s' + '%11s' * 8) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50','mAP75','mAP90', 'mAP50-95)')
 
     def postprocess(self, preds):
         """Apply Non-maximum suppression to prediction outputs."""
@@ -322,6 +322,31 @@ class MultispectralDetectionValidator(BaseValidator):
                     names=self.names,
                     on_plot=self.on_plot)  # pred
 
+    def eval_json(self, stats):
+        """Evaluates YOLO output in JSON format and returns performance statistics."""
+        if self.args.save_json and self.is_coco and len(self.jdict):
+            anno_json = self.data['path'] / 'annotations/instances_val2017.json'  # annotations
+            pred_json = self.save_dir / 'predictions.json'  # predictions
+            LOGGER.info(f'\nEvaluating pycocotools mAP using {pred_json} and {anno_json}...')
+            try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+                check_requirements('pycocotools>=2.0.6')
+                from pycocotools.coco import COCO  # noqa
+                from pycocotools.cocoeval import COCOeval  # noqa
+
+                for x in anno_json, pred_json:
+                    assert x.is_file(), f'{x} file not found'
+                anno = COCO(str(anno_json))  # init annotations api
+                pred = anno.loadRes(str(pred_json))  # init predictions api (must pass string, not Path)
+                eval = COCOeval(anno, pred, 'bbox')
+                if self.is_coco:
+                    eval.params.imgIds = [int(Path(x).stem) for x in self.dataloader.dataset.im_files]  # images to eval
+                eval.evaluate()
+                eval.accumulate()
+                eval.summarize()
+                stats[self.metrics.keys[-1]],stats[self.metrics.keys[-2]],stats[self.metrics.keys[-3]], stats[self.metrics.keys[-4]] = eval.stats[:4]  # update mAP50-95 and mAP50
+            except Exception as e:
+                LOGGER.warning(f'pycocotools unable to run: {e}')
+        return stats
 
 def val(cfg=DEFAULT_CFG, use_python=False):
     """Validate trained YOLO model on validation dataset."""
@@ -338,8 +363,10 @@ def val(cfg=DEFAULT_CFG, use_python=False):
         validator(model=args['model'])
 
 if __name__ == '__main__':
-    from ultralytics import YOLO
+    from ultralytics.models.yolo.multispectral import MultispectralDetectionValidator
 
-    model = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA-2.yaml', task='multispectral')
-    # model.val(data='../../../cfg/datasets/M3FD-infrared.yaml')
+    args = dict(mode='val', model='../../../cfg/models/v8/yolov8l-TwoStream.yaml',
+                data='../../../cfg/datasets/LLVIP.yaml')
+    validator = MultispectralDetectionValidator(args=args)
+    validator()
 

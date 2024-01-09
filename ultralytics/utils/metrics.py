@@ -557,6 +557,25 @@ class Metric(SimpleClass):
         return self.all_ap[:, 0] if len(self.all_ap) else []
 
     @property
+    def ap75(self):
+        """
+        Returns the Average Precision (AP) at an IoU threshold of 0.75 for all classes.
+        Returns:
+            (np.ndarray, list): Array of shape (nc,) with AP75 values per class, or an empty list if not available.
+        """
+        return self.all_ap[:, 5] if len(self.all_ap) else []
+
+    @property
+    def ap90(self):
+        """
+        Returns the Average Precision (AP) at an IoU threshold of 0.90 for all classes.
+        Returns:
+            (np.ndarray, list): Array of shape (nc,) with AP90 values per class, or an empty list if not available.
+        """
+        return self.all_ap[:, 8] if len(self.all_ap) else []
+
+
+    @property
     def ap(self):
         """
         Returns the Average Precision (AP) at an IoU threshold of 0.5-0.95 for all classes.
@@ -607,6 +626,15 @@ class Metric(SimpleClass):
         return self.all_ap[:, 5].mean() if len(self.all_ap) else 0.0
 
     @property
+    def map90(self):
+        """
+        Returns the mean Average Precision (mAP) at an IoU threshold of 0.90.
+        Returns:
+            (float): The mAP90 at an IoU threshold of 0.90.
+        """
+        return self.all_ap[:, 8].mean() if len(self.all_ap) else 0.0
+
+    @property
     def map(self):
         """
         Returns the mean Average Precision (mAP) over IoU thresholds of 0.5 - 0.95 in steps of 0.05.
@@ -618,7 +646,7 @@ class Metric(SimpleClass):
 
     def mean_results(self):
         """Mean of results, return mp, mr, map50, map."""
-        return [self.mp, self.mr, self.map50, self.map]
+        return [self.mp, self.mr, self.map50, self.map75, self.map90, self.map]
 
     def class_result(self, i):
         """Class-aware result, return p[i], r[i], ap50[i], ap[i]."""
@@ -634,7 +662,7 @@ class Metric(SimpleClass):
 
     def fitness(self):
         """Model fitness as a weighted combination of metrics."""
-        w = [0.0, 0.0, 0.1, 0.9]  # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
+        w = [0.0, 0.0, 0.1,  0.2,  0.2, 0.5]  # weights for [P, R, mAP@0.5, mAP@0.75, mAP@0.9, mAP@0.5:0.95]
         return (np.array(self.mean_results()) * w).sum()
 
     def update(self, results):
@@ -726,7 +754,8 @@ class DetMetrics(SimpleClass):
     @property
     def keys(self):
         """Returns a list of keys for accessing specific metrics."""
-        return ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
+        return ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP75(B)', 'metrics/mAP90(B)',
+                'metrics/mAP50-95(B)']
 
     def mean_results(self):
         """Calculate mean of detected objects & return precision, recall, mAP50, and mAP50-95."""
@@ -846,8 +875,10 @@ class SegmentMetrics(SimpleClass):
     def keys(self):
         """Returns a list of keys for accessing metrics."""
         return [
-            'metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)',
-            'metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP50-95(M)']
+            'metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP75(B)', 'metrics/mAP90(B)',
+            'metrics/mAP50-95(B)',
+            'metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP75(M)', 'metrics/mAP90(M)',
+            'metrics/mAP50-95(M)']
 
     def mean_results(self):
         """Return the mean metrics for bounding box and segmentation results."""
@@ -970,8 +1001,11 @@ class PoseMetrics(SegmentMetrics):
     def keys(self):
         """Returns list of evaluation metric keys."""
         return [
-            'metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)',
-            'metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP50-95(P)']
+            'metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP75(B)', 'metrics/mAP90(B)',
+            'metrics/mAP50-95(B)',
+            'metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP75(P)', 'metrics/mAP90(P)',
+            'metrics/mAP50-95(P)']
+
 
     def mean_results(self):
         """Return the mean results of box and pose."""
