@@ -915,7 +915,12 @@ class MultispectralDetectionModel(BaseModel):
                 x = m(x)  # run
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
-                feature_visualization(x, m.type, m.i, save_dir=visualize)
+                if m.type == 'ultralytics.nn.modules.df_msda.DFMSDABlock':
+                    feature_visualization(x[0], m.type+'_rgb', m.i, save_dir=visualize)
+                    feature_visualization(x[1], m.type+'_ir', m.i, save_dir=visualize)
+                else:
+                    feature_visualization(x, m.type, m.i, save_dir=visualize)
+
         return x
 
     def init_criterion(self):
