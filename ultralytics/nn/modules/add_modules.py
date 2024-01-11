@@ -7,9 +7,8 @@ from torch.nn import functional as F
 
 __all__ = ('DFMSDABlock', 'Add', 'Add2', 'C2f_GhostConv', 'C2f_GhostNetV2', 'GSConv', 'RefConv', 'C2f_RefConv', 'C2f_Faster_PConv')
 
-from ultralytics.nn.modules import Conv, GhostConv, GhostBottleneck, DWConv
+from ultralytics.nn.modules import Conv, GhostConv, GhostBottleneck
 from ultralytics.nn.modules.df_msda import DFMSDABlock
-from ultralytics.nn.modules.ghostnetv2_torch import SqueezeExcite
 from timm.models.layers import DropPath
 from torch import Tensor
 
