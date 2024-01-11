@@ -139,6 +139,8 @@ dmypy.json
 # datasets and projects
 datasets/
 runs/
+v8_multispectral/
+v8_detect/
 wandb/
 tests/
 .DS_Store
