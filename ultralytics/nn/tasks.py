@@ -848,7 +848,7 @@ def guess_model_task(model):
 class MultispectralDetectionModel(BaseModel):
     """YOLOv8 Multispectral detection model."""
 
-    def __init__(self, cfg='yolov8l-DFMDA.yaml', ch=3, nc=None, verbose=True):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov8l-C2f_FasterNet-DFMDA-2.yaml', ch=3, nc=None, verbose=True):  # model, input channels, number of classes
         super().__init__()
         self.yaml = cfg if isinstance(cfg, dict) else yaml_model_load(cfg)  # cfg dict
 
@@ -925,3 +925,15 @@ class MultispectralDetectionModel(BaseModel):
 
     def init_criterion(self):
         return v8DetectionLoss(self)
+
+
+class MultispectralSegmentationModel(MultispectralDetectionModel):
+    """YOLOv8 segmentation model."""
+
+    def __init__(self, cfg='yolov8l-C2f_FasterNet-DFMDA-seg.yaml', ch=3, nc=None, verbose=True):
+        """Initialize YOLOv8 segmentation model with given config and parameters."""
+        super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
+
+    def init_criterion(self):
+        """Initialize the loss criterion for the SegmentationModel."""
+        return v8SegmentationLoss(self)

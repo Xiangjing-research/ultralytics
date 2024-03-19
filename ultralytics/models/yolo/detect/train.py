@@ -118,8 +118,8 @@ class DetectionTrainer(BaseTrainer):
 
 
 if __name__ == '__main__':
-    args = dict(task='detect', mode='train', model='../../../cfg/models/v8/yolov8-C2f_RefConv.yaml',
-                data=' ../../../cfg/datasets/LLVIP-vis.yaml', epochs=50, batch=8, project='v8_detect',
-                name='train-GhostNetV2-LLVIP')
+    args = dict(task='detect', mode='train', model='../../../cfg/models/v8/yolov8l.yaml',
+                data=' ../../../cfg/datasets/LLVIP-vis.yaml', epochs=1, batch=8, project='v8_detect',
+                name='train-yolov8-LLVIP')
     trainer = DetectionTrainer(overrides=args)
     trainer.train()

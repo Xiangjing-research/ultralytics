@@ -2,7 +2,7 @@
 
 from ultralytics.engine.model import Model
 from ultralytics.models import yolo  # noqa
-from ultralytics.nn.tasks import ClassificationModel, DetectionModel, PoseModel, SegmentationModel, MultispectralDetectionModel
+from ultralytics.nn.tasks import ClassificationModel, DetectionModel, PoseModel, SegmentationModel, MultispectralDetectionModel, MultispectralSegmentationModel
 
 
 class YOLO(Model):
@@ -37,5 +37,12 @@ class YOLO(Model):
                 'trainer': yolo.multispectral.MultispectralDetectionTrainer,
                 'validator': yolo.multispectral.MultispectralDetectionValidator,
                 'predictor': yolo.multispectral.MultispectralDetectionPredictor,
+            },
+            'multispectral_seg': {
+                'model': MultispectralSegmentationModel,
+                'trainer': yolo.multispectral_seg.MultispectralSegmentationTrainer,
+                'validator': yolo.multispectral_seg.MultispectralSegmentationValidator,
+                'predictor': yolo.multispectral_seg.MultispectralSegmentationPredictor,
             }
+
         }

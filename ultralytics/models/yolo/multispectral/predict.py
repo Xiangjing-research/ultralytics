@@ -59,7 +59,7 @@ class MultispectralDetectionPredictor(DetectionPredictor):
 if __name__ == '__main__':
     from ultralytics import YOLO
 
-    model = YOLO(model='v8_multispectral/train-C2f_FasterNet-DFMDA-M3FD/weights/best.pt', task='multispectral')
-    model.predict(
-        ['D:\\M3FD-Person\\images\\visible\\00025.png', 'D:\\M3FD-Person\\images\\infrared\\00025.png'],
-        save=True, name='predict')
+    # model = YOLO(model='v8_multispectral/train-C2f_FasterNet-DFMDA-LLVIP4/weights/best.pt', task='multispectral')
+    # model.predict(
+    #     ['D:\\DataSets\\LLVIP\\images\\visible\\train\\020344.jpg', 'D:\\DataSets\\LLVIP\\images\\infrared\\train\\020344.jpg'],
+    #     save=True, name='predict')

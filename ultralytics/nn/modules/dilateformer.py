@@ -83,7 +83,7 @@ class MultiDilatelocalAttention(nn.Module):
         x = x.reshape(B, self.num_dilation, C // self.num_dilation, H, W).permute(1, 0, 3, 4, 2)
         # num_dilation, B, H, W, C//num_dilation
         for i in range(self.num_dilation):
-            x[i] = self.dilate_attention[i](qkv[i][0], qkv[i][1], qkv[i][2])  # B, H, W,C//num_dilation
+            x[i] = self.dilate_attention[i](qkv[i][0], qkv[i][1], qkv[i][2])  # num_dilation, B, H, W, C//num_dilation
         x = x.permute(1, 2, 3, 0, 4).reshape(B, H, W, C)
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -462,9 +462,8 @@ def dilateformer_base(pretrained=True, **kwargs):
 
 
 if __name__ == "__main__":
-    x = torch.arange(0, 1 * 3 * 7 * 7).float()
-    x = x.view(1, 3, 7, 7)
-    m = DilateBlock(dim=3, num_heads=3, qkv_bias=True)
+    x = torch.rand(1, 96, 56, 56)
+    m = DilateBlock(dim=96, num_heads=3, qkv_bias=True)
     y = m(x)
     print(y.shape)
     #

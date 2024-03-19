@@ -284,7 +284,7 @@ class BasePredictor:
                 if self.args.show and self.plotted_img is not None:
                     self.show(p)
                 if self.args.save and self.plotted_img is not None:
-                    im_name = p.parts[3] + '_' + p.name
+                    im_name = p.parts[4] + '_' + p.name #这里使用第4个字符串，表示visable/infrared
                     self.save_preds(vid_cap, i, str(self.save_dir / im_name))
 
             self.run_callbacks('on_predict_batch_end')

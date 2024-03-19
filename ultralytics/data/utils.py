@@ -470,7 +470,7 @@ class HUBDatasetStats:
             """Update labels to integer class and 4 decimal place floats."""
             if self.task == 'detect':
                 coordinates = labels['bboxes']
-            elif self.task == 'segment':
+            elif self.task == 'segment' or self.task == 'multispectral_seg':
                 coordinates = [x.flatten() for x in labels['segments']]
             elif self.task == 'pose':
                 n = labels['keypoints'].shape[0]

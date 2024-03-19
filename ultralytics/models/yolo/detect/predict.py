@@ -45,5 +45,5 @@ if __name__ == '__main__':
 
     model = YOLO(model='weights/yolov8l.pt', task='detect')
     model.predict(
-        source=['D:\\M3FD-Person\\images\\visible\\00025.png', 'D:\\M3FD-Person\\images\\infrared\\00025.png'],
+        source=['D:\\DataSets\\LLVIP\\images\\visible\\train\\020344.jpg', 'D:\\DataSets\\LLVIP\\images\\infrared\\train\\020344.jpg'],
         save=True, name='predict')

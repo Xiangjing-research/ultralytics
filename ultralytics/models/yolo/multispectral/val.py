@@ -79,7 +79,8 @@ class MultispectralDetectionValidator(BaseValidator):
 
     def get_desc(self):
         """Return a formatted string summarizing class metrics of YOLO model."""
-        return ('%22s' + '%11s' * 8) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50','mAP75','mAP90', 'mAP50-95)')
+        return ('%22s' + '%11s' * 8) % (
+        'Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50', 'mAP75', 'mAP90', 'mAP50-95)')
 
     def postprocess(self, preds):
         """Apply Non-maximum suppression to prediction outputs."""
@@ -311,6 +312,19 @@ class MultispectralDetectionValidator(BaseValidator):
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
             return stats
 
+    def plot_val_samples(self, batch, ni):
+        """Plot validation image samples."""
+        x = torch.split(batch['img'], 3, dim=1)
+        rgb = x[0]
+        plot_images(rgb,
+                    batch['batch_idx'],
+                    batch['cls'].squeeze(-1),
+                    batch['bboxes'],
+                    paths=batch['im_file'],
+                    fname=self.save_dir / f'val_batch{ni}_labels.jpg',
+                    names=self.names,
+                    on_plot=self.on_plot)
+
     def plot_predictions(self, batch, preds, ni):
         """Plots predicted bounding boxes on input images and saves the result."""
         x = torch.split(batch['img'], 3, dim=1)
@@ -343,10 +357,12 @@ class MultispectralDetectionValidator(BaseValidator):
                 eval.evaluate()
                 eval.accumulate()
                 eval.summarize()
-                stats[self.metrics.keys[-1]],stats[self.metrics.keys[-2]],stats[self.metrics.keys[-3]], stats[self.metrics.keys[-4]] = eval.stats[:4]  # update mAP50-95 and mAP50
+                stats[self.metrics.keys[-1]], stats[self.metrics.keys[-2]], stats[self.metrics.keys[-3]], stats[
+                    self.metrics.keys[-4]] = eval.stats[:4]  # update mAP50-95 and mAP50
             except Exception as e:
                 LOGGER.warning(f'pycocotools unable to run: {e}')
         return stats
+
 
 def val(cfg=DEFAULT_CFG, use_python=False):
     """Validate trained YOLO model on validation dataset."""
@@ -362,6 +378,7 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 
         validator(model=args['model'])
 
+
 if __name__ == '__main__':
     from ultralytics.models.yolo.multispectral import MultispectralDetectionValidator
 
@@ -369,4 +386,3 @@ if __name__ == '__main__':
                 data='../../../cfg/datasets/LLVIP.yaml')
     validator = MultispectralDetectionValidator(args=args)
     validator()
-
