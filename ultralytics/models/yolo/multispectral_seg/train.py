@@ -64,14 +64,14 @@ class MultispectralSegmentationTrainer(MultispectralDetectionTrainer):
                     fname=self.save_dir / f'train_rgb_batch{ni}.jpg',
                     on_plot=self.on_plot)
         for i, im_file in enumerate(batch['im_file']):
-            batch['im_file'][i] = im_file.replace('visible', 'infrared')
+            batch['im_file'][i] = im_file.replace('\\rgb\\', '\\thermal\\')
         plot_images(images=ir,
                     batch_idx=batch['batch_idx'],
                     cls=batch['cls'].squeeze(-1),
                     bboxes=batch['bboxes'],
                     masks=batch['masks'],
                     paths=batch['im_file'],
-                    fname=self.save_dir / f'train_ir_batch{ni}.jpg',
+                    fname=self.save_dir / f'train_thermal_batch{ni}.jpg',
                     on_plot=self.on_plot)
 
     def plot_metrics(self):

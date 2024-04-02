@@ -226,7 +226,7 @@ class MultispectralDetectionTrainer(BaseTrainer):
 if __name__ == '__main__':
     from ultralytics.models.yolo.multispectral import MultispectralDetectionTrainer
 
-    args = dict(task='multispectral', mode='train', model='../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA-2.yaml',
+    args = dict(task='multispectral', mode='train', model='../../../cfg/models/v8/yolov8l-C2f_RepVit-CSFusion.yaml',
                 data=' ../../../cfg/datasets/LLVIP.yaml', epochs=1, batch=4, project='v8_multispectral',
                 name='train_det')
     trainer = MultispectralDetectionTrainer(overrides=args)

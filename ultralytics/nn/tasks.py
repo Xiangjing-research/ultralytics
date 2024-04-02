@@ -10,7 +10,8 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, Add, Add2, DFMSDABlock, C2f_GhostConv, C2f_GhostNetV2, GSConv, C2f_RefConv, C2f_Faster_PConv)
+                                    RTDETRDecoder, Segment, Add, Add2,Bridge, DFMSDABlock, C2f_GhostConv, C2f_GhostNetV2,
+                                    GSConv, C2f_RefConv, C2f_Faster_PConv, C2f_RepViTBlock, CSFusion)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -683,7 +684,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
 
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
-                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, GSConv, C2f_RefConv, C2f_Faster_PConv):
+                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, GSConv, C2f_RefConv, C2f_Faster_PConv, C2f_RepViTBlock):
             c1, c2 = ch[f], args[0]
             if f == -2:
                 c1 = 3
@@ -691,7 +692,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
 
             args = [c1, c2, *args[1:]]
-            if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, C2f_RefConv, C2f_Faster_PConv):
+            if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_GhostConv, C2f_GhostNetV2, C2f_RefConv, C2f_Faster_PConv,C2f_RepViTBlock):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -707,6 +708,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m is Bridge:
+            c2 = ch[f]
         elif m is Add:
             # print("ch[f]", f, ch[f[0]])
             c2 = ch[f[0]]
@@ -719,6 +722,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is DFMSDABlock:
             c2 = ch[f[0]]
             args = [c2, *args[-3:]]
+        elif m is CSFusion:
+            c2 = ch[f[0]]
+            args = [c2, make_divisible(min(args[0], max_channels) * width, 8)]
         elif m in (Detect, Segment, Pose):
             args.append([ch[x] for x in f])
             if m is Segment:

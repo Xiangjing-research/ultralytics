@@ -1,13 +1,13 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 # Default training settings and hyperparameters for medium-augmentation COCO training
 
-task: multispectral_seg  # (str) YOLO task, i.e. detect, segment, classify, pose,multispectral
+task: multispectral  # (str) YOLO task, i.e. detect, segment, classify, pose,multispectral
 mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
 
 # Train settings -------------------------------------------------------------------------------------------------------
-model: ../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA-seg.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
+model: ../../../cfg/models/v8/yolov8l-C2f_RepVit-CSFusion.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
 #model: ./weights/yolov8l.pt # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
-data: ../../../cfg/datasets/PST900.yaml # (str, optional) path to data file, i.e. coco128.yaml
+data: ../../../cfg/datasets/LLVIP.yaml # (str, optional) path to data file, i.e. coco128.yaml
 epochs: 300  # (int) number of epochs to train for
 patience: 50  # (int) epochs to wait for no observable improvement for early stopping of training
 batch: 4  # (int) number of images per batch (-1 for AutoBatch)
@@ -21,7 +21,7 @@ project: v8_multispectral_seg # (str, optional) project name
 name: train # (str, optional) experiment name, results saved to 'project/name' directory
 exist_ok: False  # (bool) whether to overwrite existing experiment
 pretrained: True  # (bool | str) whether to use a pretrained model (bool) or a model to load weights from (str)
-optimizer: auto  # (str) optimizer to use, choices=[SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, auto]
+optimizer: Adam  # (str) optimizer to use, choices=[SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, auto]
 verbose: True  # (bool) whether to print verbose output
 seed: 0  # (int) random seed for reproducibility
 deterministic: True  # (bool) whether to enable deterministic mode

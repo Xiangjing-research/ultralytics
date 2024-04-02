@@ -241,7 +241,7 @@ class BasePredictor:
         # Warmup model
         if not self.done_warmup:
             ch = 3
-            if self.args.task == 'multispectral':
+            if self.args.task == 'multispectral' or self.args.task == 'multispectral_seg':
                 ch = 6
             self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, ch, *self.imgsz))
             self.done_warmup = True

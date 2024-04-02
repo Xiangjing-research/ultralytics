@@ -131,27 +131,29 @@ def labelme2yolov2Seg(jsonfilePath="", resultDirPath="", classList=["dusty", "de
 
 
 if __name__ == "__main__":
-    ## mask2json
-    # img_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\rgb'
-    # mask_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\labels'
-    # save_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\anno_json'
+    # mask2json
+    img_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\rgb'
+    mask_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\labels'
+    save_path = 'D:\\DataSets\\PST900_RGBT_Dataset\\train\\anno_json'
 
-    # os.makedirs(save_path, exist_ok=True)
+    os.makedirs(save_path, exist_ok=True)
 
-    # mask_files = os.listdir(mask_path)
-    # for mask_file in mask_files:
-    #     mask_file_path = os.path.join(mask_path, mask_file)
-    #     save_file = mask_file.split('.')[0] + '.json'
-    #     save_file_path = os.path.join(save_path, save_file)
-    #     with open(save_file_path, mode='w', encoding='utf-8') as f:
-    #         json.dump(func(mask_file_path), f)
-    ## json2yolo
-    # jsonfilePath = "D:\\DataSets\\PST900_RGBT_Dataset\\train\\anno_json"  # 要转换的json文件所在目录
-    # resultDirPath = "D:\\DataSets\\PST900_RGBT_Dataset\\train\\txt"  # 要生成的txt文件夹
-    # labelme2yolov2Seg(jsonfilePath=jsonfilePath, resultDirPath=resultDirPath, classList=["Fire-Extinguisher",
-    #                                                                                      "Backpack",
-    #                                                                                      "Hand-Drill",
-    #                                                                                      "Survivor"])
+    mask_files = os.listdir(mask_path)
+    for mask_file in mask_files:
+        mask_file_path = os.path.join(mask_path, mask_file)
+        save_file = mask_file.split('.')[0] + '.json'
+        save_file_path = os.path.join(save_path, save_file)
+        with open(save_file_path, mode='w', encoding='utf-8') as f:
+            json.dump(func(mask_file_path), f)
+
+
+    # json2yolo
+    jsonfilePath = "D:\\DataSets\\PST900_RGBT_Dataset\\train\\anno_json"  # 要转换的json文件所在目录
+    resultDirPath = "D:\\DataSets\\PST900_RGBT_Dataset\\train\\txt"  # 要生成的txt文件夹
+    labelme2yolov2Seg(jsonfilePath=jsonfilePath, resultDirPath=resultDirPath, classList=["Fire-Extinguisher",
+                                                                                         "Backpack",
+                                                                                         "Hand-Drill",
+                                                                                         "Survivor"])
 
     ## mask 可视化
     # import cv2

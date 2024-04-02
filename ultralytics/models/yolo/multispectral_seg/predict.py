@@ -1,8 +1,11 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
+import torch
+from pathlib import Path
 
 from ultralytics.engine.results import Results
 from ultralytics.models.yolo.multispectral import MultispectralDetectionPredictor
 from ultralytics.utils import DEFAULT_CFG, ops
+from ultralytics.utils.files import increment_path
 
 
 class MultispectralSegmentationPredictor(MultispectralDetectionPredictor):
@@ -53,3 +56,20 @@ class MultispectralSegmentationPredictor(MultispectralDetectionPredictor):
                 pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6], masks=masks))
         return results
+
+    def inference(self, im, *args, **kwargs):
+        """Runs inference on a given image using the specified model and arguments."""
+        visualize = increment_path(self.save_dir / Path(self.batch[0][0]).stem,
+                                   mkdir=True) if self.args.visualize and (not self.source_type.tensor) else False
+        rgb, ir = im.split(1, 0)
+        return self.model(torch.cat([rgb, ir], dim=1), augment=self.args.augment, visualize=visualize)
+
+
+if __name__ == '__main__':
+    from ultralytics import YOLO
+
+    model = YOLO(model='v8_multispectral/train_seg/weights/best.pt', task='multispectral_seg')
+    model.predict(
+        ['D:\\DataSets\\PST900_RGBT_Dataset\\train\\images\\rgb\\37_bag7_rect_rgb_frame0000001732.png',
+         'D:\\DataSets\\PST900_RGBT_Dataset\\train\\images\\thermal\\37_bag7_rect_thermal_frame0000001732.png'],
+        save=True, name='predict')
