@@ -1110,7 +1110,7 @@ class MultispectralDetectionModel(BaseModel):
             self.info()
             LOGGER.info('')
 
-    def _predict_once(self, x, profile=False, visualize=False):
+    def _predict_once(self, x, profile=False, visualize=False, embed=None):
         """
         Perform a forward pass through the network.
 

@@ -59,9 +59,7 @@ class MultispectralDetectionPredictor(DetectionPredictor):
 if __name__ == '__main__':
     from ultralytics import YOLO
 
-    model = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_RepVit-CSFusion.yaml', task='multispectral')
-    model.cuda()
-    print(model.device)
+    model = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_RepVit-CSFusion.yaml', task='multispectral',verbose=True)
     # model.predict(
     #     ['D:\\DataSets\\LLVIP\\images\\visible\\train\\020344.jpg', 'D:\\DataSets\\LLVIP\\images\\infrared\\train\\020344.jpg'],
     #     save=True, name='predict')
