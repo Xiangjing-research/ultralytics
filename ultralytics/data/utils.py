@@ -27,15 +27,15 @@ from ultralytics.utils import (
     clean_url,
     colorstr,
     emojis,
+    is_dir_writeable,
     yaml_load,
     yaml_save,
-    is_dir_writeable,
 )
 from ultralytics.utils.checks import check_file, check_font, is_ascii
 from ultralytics.utils.downloads import download, safe_download, unzip_file
 from ultralytics.utils.ops import segments2boxes
 
-HELP_URL = "See https://docs.ultralytics.com/datasets/detect for dataset formatting guidance."
+HELP_URL = "See https://docs.ultralytics.com/datasets for dataset formatting guidance."
 IMG_FORMATS = {"bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm"}  # image suffixes
 VID_FORMATS = {"asf", "avi", "gif", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ts", "wmv", "webm"}  # video suffixes
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
@@ -440,6 +440,7 @@ class HUBDatasetStats:
         stats = HUBDatasetStats('path/to/coco8.zip', task='detect')  # detect dataset
         stats = HUBDatasetStats('path/to/coco8-seg.zip', task='segment')  # segment dataset
         stats = HUBDatasetStats('path/to/coco8-pose.zip', task='pose')  # pose dataset
+        stats = HUBDatasetStats('path/to/dota8.zip', task='obb')  # OBB dataset
         stats = HUBDatasetStats('path/to/imagenet10.zip', task='classify')  # classification dataset
 
         stats.get_json(save=True)
@@ -496,13 +497,13 @@ class HUBDatasetStats:
             """Update labels to integer class and 4 decimal place floats."""
             if self.task == "detect":
                 coordinates = labels["bboxes"]
-            elif self.task == "segment" or self.task == "multispectral_seg":
+            elif self.task in {"segment", "obb", "multispectral_seg"}:
                 coordinates = [x.flatten() for x in labels["segments"]]
             elif self.task == "pose":
-                n = labels["keypoints"].shape[0]
-                coordinates = np.concatenate((labels["bboxes"], labels["keypoints"].reshape(n, -1)), 1)
+                n, nk, nd = labels["keypoints"].shape
+                coordinates = np.concatenate((labels["bboxes"], labels["keypoints"].reshape(n, nk * nd)), 1)
             else:
-                raise ValueError("Undefined dataset task.")
+                raise ValueError(f"Undefined dataset task={self.task}.")
             zipped = zip(labels["cls"], coordinates)
             return [[int(c[0]), *(round(float(x), 4) for x in points)] for c, points in zipped]
 

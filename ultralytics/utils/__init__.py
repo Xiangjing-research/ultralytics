@@ -1,6 +1,7 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import contextlib
+import importlib.metadata
 import inspect
 import logging.config
 import os
@@ -35,13 +36,15 @@ FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLO
 ASSETS = ROOT / "assets"  # default images
 DEFAULT_CFG_PATH = ROOT / "cfg/default.yaml"
-NUM_THREADS = min(8, max(1, os.cpu_count() - 1))  # number of YOLOv5 multiprocessing threads
+NUM_THREADS = min(8, max(1, os.cpu_count() - 1))  # number of YOLO multiprocessing threads
 AUTOINSTALL = str(os.getenv("YOLO_AUTOINSTALL", True)).lower() == "true"  # global auto-install mode
 VERBOSE = str(os.getenv("YOLO_VERBOSE", True)).lower() == "true"  # global verbose mode
 TQDM_BAR_FORMAT = "{l_bar}{bar:10}{r_bar}" if VERBOSE else None  # tqdm bar format
 LOGGING_NAME = "ultralytics"
 MACOS, LINUX, WINDOWS = (platform.system() == x for x in ["Darwin", "Linux", "Windows"])  # environment booleans
 ARM64 = platform.machine() in {"arm64", "aarch64"}  # ARM64 booleans
+PYTHON_VERSION = platform.python_version()
+TORCHVISION_VERSION = importlib.metadata.version("torchvision")  # faster than importing torchvision
 HELP_MSG = """
     Usage examples for running YOLOv8:
 
@@ -58,7 +61,7 @@ HELP_MSG = """
         model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
 
         # Use the model
-        results = model.train(data="coco128.yaml", epochs=3)  # train the model
+        results = model.train(data="coco8.yaml", epochs=3)  # train the model
         results = model.val()  # evaluate model performance on the validation set
         results = model('https://ultralytics.com/images/bus.jpg')  # predict on an image
         success = model.export(format='onnx')  # export the model to ONNX format
@@ -75,13 +78,13 @@ HELP_MSG = """
                         See all ARGS at https://docs.ultralytics.com/usage/cfg or with 'yolo cfg'
 
         - Train a detection model for 10 epochs with an initial learning_rate of 0.01
-            yolo detect train data=coco128.yaml model=yolov8n.pt epochs=10 lr0=0.01
+            yolo detect train data=coco8.yaml model=yolov8n.pt epochs=10 lr0=0.01
 
         - Predict a YouTube video using a pretrained segmentation model at image size 320:
             yolo segment predict model=yolov8n-seg.pt source='https://youtu.be/LNwODJXcvt4' imgsz=320
 
         - Val a pretrained detection model at batch-size 1 and image size 640:
-            yolo detect val model=yolov8n.pt data=coco128.yaml batch=1 imgsz=640
+            yolo detect val model=yolov8n.pt data=coco8.yaml batch=1 imgsz=640
 
         - Export a YOLOv8n classification model to ONNX format at image size 224 by 128 (no TASK required)
             yolo export model=yolov8n-cls.pt format=onnx imgsz=224,128
@@ -99,13 +102,15 @@ HELP_MSG = """
     GitHub: https://github.com/ultralytics/ultralytics
     """
 
-# Settings
+# Settings and Environment Variables
 torch.set_printoptions(linewidth=320, precision=4, profile="default")
 np.set_printoptions(linewidth=320, formatter={"float_kind": "{:11.5g}".format})  # format short g, %precision=5
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ["NUMEXPR_MAX_THREADS"] = str(NUM_THREADS)  # NumExpr max threads
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # for deterministic training
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # suppress verbose TF compiler warnings in Colab
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # suppress verbose TF compiler warnings in Colab
+os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"  # suppress "NNPACK.cpp could not initialize NNPACK" warnings
+os.environ["KINETO_LOG_LEVEL"] = "5"  # suppress verbose PyTorch profiler output when computing FLOPs
 
 
 class TQDM(tqdm_original):
@@ -300,7 +305,6 @@ class ThreadingLocked:
         @ThreadingLocked()
         def my_function():
             # Your code here
-            pass
         ```
     """
 
@@ -390,7 +394,7 @@ def yaml_print(yaml_file: Union[str, Path, dict]) -> None:
         (None)
     """
     yaml_dict = yaml_load(yaml_file) if isinstance(yaml_file, (str, Path)) else yaml_file
-    dump = yaml.dump(yaml_dict, sort_keys=False, allow_unicode=True)
+    dump = yaml.dump(yaml_dict, sort_keys=False, allow_unicode=True, width=float("inf"))
     LOGGER.info(f"Printing '{colorstr('bold', 'black', yaml_file)}'\n\n{dump}")
 
 
@@ -401,6 +405,20 @@ for k, v in DEFAULT_CFG_DICT.items():
         DEFAULT_CFG_DICT[k] = None
 DEFAULT_CFG_KEYS = DEFAULT_CFG_DICT.keys()
 DEFAULT_CFG = IterableSimpleNamespace(**DEFAULT_CFG_DICT)
+
+
+def read_device_model() -> str:
+    """
+    Reads the device model information from the system and caches it for quick access. Used by is_jetson() and
+    is_raspberrypi().
+
+    Returns:
+        (str): Model file contents if read successfully or empty string otherwise.
+    """
+    with contextlib.suppress(Exception):
+        with open("/proc/device-tree/model") as f:
+            return f.read()
+    return ""
 
 
 def is_ubuntu() -> bool:
@@ -457,12 +475,31 @@ def is_docker() -> bool:
     Returns:
         (bool): True if the script is running inside a Docker container, False otherwise.
     """
-    file = Path("/proc/self/cgroup")
-    if file.exists():
-        with open(file) as f:
+    with contextlib.suppress(Exception):
+        with open("/proc/self/cgroup") as f:
             return "docker" in f.read()
-    else:
-        return False
+    return False
+
+
+def is_raspberrypi() -> bool:
+    """
+    Determines if the Python environment is running on a Raspberry Pi by checking the device model information.
+
+    Returns:
+        (bool): True if running on a Raspberry Pi, False otherwise.
+    """
+    return "Raspberry Pi" in PROC_DEVICE_MODEL
+
+
+def is_jetson() -> bool:
+    """
+    Determines if the Python environment is running on a Jetson Nano or Jetson Orin device by checking the device model
+    information.
+
+    Returns:
+        (bool): True if running on a Jetson Nano or Jetson Orin, False otherwise.
+    """
+    return "NVIDIA" in PROC_DEVICE_MODEL  # i.e. "NVIDIA Jetson Nano" or "NVIDIA Orin NX"
 
 
 def is_online() -> bool:
@@ -472,21 +509,14 @@ def is_online() -> bool:
     Returns:
         (bool): True if connection is successful, False otherwise.
     """
-    import socket
+    with contextlib.suppress(Exception):
+        assert str(os.getenv("YOLO_OFFLINE", "")).lower() != "true"  # check if ENV var YOLO_OFFLINE="True"
+        import socket
 
-    for host in "1.1.1.1", "8.8.8.8", "223.5.5.5":  # Cloudflare, Google, AliDNS:
-        try:
-            test_connection = socket.create_connection(address=(host, 53), timeout=2)
-        except (socket.timeout, socket.gaierror, OSError):
-            continue
-        else:
-            # If the connection was successful, close it to avoid a ResourceWarning
-            test_connection.close()
+        for dns in ("1.1.1.1", "8.8.8.8"):  # check Cloudflare and Google DNS
+            socket.create_connection(address=(dns, 80), timeout=2.0).close()
             return True
     return False
-
-
-ONLINE = is_online()
 
 
 def is_pip_package(filepath: str = __name__) -> bool:
@@ -541,17 +571,6 @@ def is_github_action_running() -> bool:
     return "GITHUB_ACTIONS" in os.environ and "GITHUB_WORKFLOW" in os.environ and "RUNNER_OS" in os.environ
 
 
-def is_git_dir():
-    """
-    Determines whether the current file is part of a git repository. If the current file is not part of a git
-    repository, returns None.
-
-    Returns:
-        (bool): True if current file is part of a git repository.
-    """
-    return get_git_dir() is not None
-
-
 def get_git_dir():
     """
     Determines whether the current file is part of a git repository and if so, returns the repository root directory. If
@@ -565,6 +584,17 @@ def get_git_dir():
             return d
 
 
+def is_git_dir():
+    """
+    Determines whether the current file is part of a git repository. If the current file is not part of a git
+    repository, returns None.
+
+    Returns:
+        (bool): True if current file is part of a git repository.
+    """
+    return GIT_DIR is not None
+
+
 def get_git_origin_url():
     """
     Retrieves the origin URL of a git repository.
@@ -572,7 +602,7 @@ def get_git_origin_url():
     Returns:
         (str | None): The origin URL of the git repository or None if not git directory.
     """
-    if is_git_dir():
+    if IS_GIT_DIR:
         with contextlib.suppress(subprocess.CalledProcessError):
             origin = subprocess.check_output(["git", "config", "--get", "remote.origin.url"])
             return origin.decode().strip()
@@ -585,7 +615,7 @@ def get_git_branch():
     Returns:
         (str | None): The current git branch name or None if not a git directory.
     """
-    if is_git_dir():
+    if IS_GIT_DIR:
         with contextlib.suppress(subprocess.CalledProcessError):
             origin = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
             return origin.decode().strip()
@@ -651,6 +681,18 @@ def get_user_config_dir(sub_dir="Ultralytics"):
     return path
 
 
+# Define constants (required below)
+PROC_DEVICE_MODEL = read_device_model()  # is_jetson() and is_raspberrypi() depend on this constant
+ONLINE = is_online()
+IS_COLAB = is_colab()
+IS_DOCKER = is_docker()
+IS_JETSON = is_jetson()
+IS_JUPYTER = is_jupyter()
+IS_KAGGLE = is_kaggle()
+IS_PIP_PACKAGE = is_pip_package()
+IS_RASPBERRYPI = is_raspberrypi()
+GIT_DIR = get_git_dir()
+IS_GIT_DIR = is_git_dir()
 USER_CONFIG_DIR = Path(os.getenv("YOLO_CONFIG_DIR") or get_user_config_dir())  # Ultralytics settings dir
 SETTINGS_YAML = USER_CONFIG_DIR / "settings.yaml"
 
@@ -680,8 +722,8 @@ def colorstr(*input):
         (str): The input string wrapped with ANSI escape codes for the specified color and style.
 
     Examples:
-        >>> colorstr('blue', 'bold', 'hello world')
-        >>> '\033[34m\033[1mhello world\033[0m'
+        >>> colorstr("blue", "bold", "hello world")
+        >>> "\033[34m\033[1mhello world\033[0m"
     """
     *args, string = input if len(input) > 1 else ("blue", "bold", input[0])  # color arguments, string
     colors = {
@@ -763,8 +805,8 @@ class Retry(contextlib.ContextDecorator):
     """
     Retry class for function execution with exponential backoff.
 
-    Can be used as a decorator or a context manager to retry a function or block of code on exceptions, up to a
-    specified number of times with an exponentially increasing delay between retries.
+    Can be used as a decorator to retry a function on exceptions, up to a specified number of times with an
+    exponentially increasing delay between retries.
 
     Examples:
         Example usage as a decorator:
@@ -772,11 +814,6 @@ class Retry(contextlib.ContextDecorator):
         >>> def test_func():
         >>>     # Replace with function logic that may raise exceptions
         >>>     return True
-
-        Example usage as a context manager:
-        >>> with Retry(times=3, delay=2):
-        >>>     # Replace with code block that may raise exceptions
-        >>>     pass
     """
 
     def __init__(self, times=3, delay=2):
@@ -802,20 +839,6 @@ class Retry(contextlib.ContextDecorator):
                     time.sleep(self.delay * (2**self._attempts))  # exponential backoff delay
 
         return wrapped_func
-
-    def __enter__(self):
-        """Enter the runtime context related to this object."""
-        self._attempts = 0
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Exit the runtime context related to this object with exponential backoff."""
-        if exc_type is not None:
-            self._attempts += 1
-            if self._attempts < self.times:
-                print(f"Retry {self._attempts}/{self.times} failed: {exc_value}")
-                time.sleep(self.delay * (2**self._attempts))  # exponential backoff delay
-                return True  # Suppresses the exception and retries
-        return False  # Re-raises the exception if retries are exhausted
 
 
 def threaded(func):
@@ -877,7 +900,7 @@ def set_sentry():
         event["tags"] = {
             "sys_argv": ARGV[0],
             "sys_argv_name": Path(ARGV[0]).name,
-            "install": "git" if is_git_dir() else "pip" if is_pip_package() else "other",
+            "install": "git" if IS_GIT_DIR else "pip" if IS_PIP_PACKAGE else "other",
             "os": ENVIRONMENT,
         }
         return event
@@ -888,8 +911,8 @@ def set_sentry():
         and Path(ARGV[0]).name == "yolo"
         and not TESTS_RUNNING
         and ONLINE
-        and is_pip_package()
-        and not is_git_dir()
+        and IS_PIP_PACKAGE
+        and not IS_GIT_DIR
     ):
         # If sentry_sdk package is not installed then return and do not use Sentry
         try:
@@ -928,9 +951,8 @@ class SettingsManager(dict):
         from ultralytics.utils.checks import check_version
         from ultralytics.utils.torch_utils import torch_distributed_zero_first
 
-        git_dir = get_git_dir()
-        root = git_dir or Path()
-        datasets_root = (root.parent if git_dir and is_dir_writeable(root.parent) else root).resolve()
+        root = GIT_DIR or Path()
+        datasets_root = (root.parent if GIT_DIR and is_dir_writeable(root.parent) else root).resolve()
 
         self.file = Path(file)
         self.version = version
@@ -1003,13 +1025,10 @@ class SettingsManager(dict):
         self.save()
 
 
-def deprecation_warn(arg, new_arg, version=None):
+def deprecation_warn(arg, new_arg):
     """Issue a deprecation warning when a deprecated argument is used, suggesting an updated argument."""
-    if not version:
-        version = float(__version__[:3]) + 0.2  # deprecate after 2nd major release
     LOGGER.warning(
-        f"WARNING ⚠️ '{arg}' is deprecated and will be removed in 'ultralytics {version}' in the future. "
-        f"Please use '{new_arg}' instead."
+        f"WARNING ⚠️ '{arg}' is deprecated and will be removed in in the future. " f"Please use '{new_arg}' instead."
     )
 
 
@@ -1034,20 +1053,20 @@ WEIGHTS_DIR = Path(SETTINGS["weights_dir"])  # global weights directory
 RUNS_DIR = Path(SETTINGS["runs_dir"])  # global runs directory
 ENVIRONMENT = (
     "Colab"
-    if is_colab()
+    if IS_COLAB
     else "Kaggle"
-    if is_kaggle()
+    if IS_KAGGLE
     else "Jupyter"
-    if is_jupyter()
+    if IS_JUPYTER
     else "Docker"
-    if is_docker()
+    if IS_DOCKER
     else platform.system()
 )
 TESTS_RUNNING = is_pytest_running() or is_github_action_running()
 set_sentry()
 
 # Apply monkey patches
-from .patches import imread, imshow, imwrite, torch_save
+from ultralytics.utils.patches import imread, imshow, imwrite, torch_save
 
 torch.save = torch_save
 if WINDOWS:

@@ -8,8 +8,9 @@ from typing import Tuple, Union
 import cv2
 import numpy as np
 import torch
-import torchvision.transforms as T
+from PIL import Image
 
+from ultralytics.data.utils import polygons2masks, polygons2masks_overlap
 from ultralytics.utils import LOGGER, colorstr
 from ultralytics.utils.checks import check_version
 from ultralytics.utils.instance import Instances
@@ -17,11 +18,10 @@ from ultralytics.utils.metrics import bbox_ioa
 
 from ultralytics.utils.ops import segment2box, xyxyxyxy2xywhr
 from ultralytics.utils.torch_utils import TORCHVISION_0_10, TORCHVISION_0_11, TORCHVISION_0_13
-from .utils import polygons2masks, polygons2masks_overlap
 
 DEFAULT_MEAN = (0.0, 0.0, 0.0)
 DEFAULT_STD = (1.0, 1.0, 1.0)
-DEFAULT_CROP_FTACTION = 1.0
+DEFAULT_CROP_FRACTION = 1.0
 
 
 # TODO: we might need a BaseTransform to make all these augments be compatible with both classification and semantic
@@ -168,8 +168,8 @@ class BaseMixTransform:
         text2id = {text: i for i, text in enumerate(mix_texts)}
 
         for label in [labels] + labels["mix_labels"]:
-            for i, l in enumerate(label["cls"].squeeze(-1).tolist()):
-                text = label["texts"][int(l)]
+            for i, cls in enumerate(label["cls"].squeeze(-1).tolist()):
+                text = label["texts"][int(cls)]
                 label["cls"][i] = text2id[tuple(text)]
             label["texts"] = mix_texts
         return labels
@@ -687,7 +687,7 @@ class RandomFlip:
             flip_idx (array-like, optional): Index mapping for flipping keypoints, if any.
         """
         assert direction in {"horizontal", "vertical"}, f"Support direction `horizontal` or `vertical`, got {direction}"
-        assert 0 <= p <= 1.0
+        assert 0 <= p <= 1.0, f"The probability should be in range [0, 1], but got {p}."
 
         self.p = p
         self.direction = direction
@@ -875,10 +875,55 @@ class Albumentations:
         self.p = p
         self.transform = None
         prefix = colorstr("albumentations: ")
+
         try:
             import albumentations as A
 
             check_version(A.__version__, "1.0.3", hard=True)  # version requirement
+
+            # List of possible spatial transforms
+            spatial_transforms = {
+                "Affine",
+                "BBoxSafeRandomCrop",
+                "CenterCrop",
+                "CoarseDropout",
+                "Crop",
+                "CropAndPad",
+                "CropNonEmptyMaskIfExists",
+                "D4",
+                "ElasticTransform",
+                "Flip",
+                "GridDistortion",
+                "GridDropout",
+                "HorizontalFlip",
+                "Lambda",
+                "LongestMaxSize",
+                "MaskDropout",
+                "MixUp",
+                "Morphological",
+                "NoOp",
+                "OpticalDistortion",
+                "PadIfNeeded",
+                "Perspective",
+                "PiecewiseAffine",
+                "PixelDropout",
+                "RandomCrop",
+                "RandomCropFromBorders",
+                "RandomGridShuffle",
+                "RandomResizedCrop",
+                "RandomRotate90",
+                "RandomScale",
+                "RandomSizedBBoxSafeCrop",
+                "RandomSizedCrop",
+                "Resize",
+                "Rotate",
+                "SafeRotate",
+                "ShiftScaleRotate",
+                "SmallestMaxSize",
+                "Transpose",
+                "VerticalFlip",
+                "XYMasking",
+            }  # from https://albumentations.ai/docs/getting_started/transforms_and_targets/#spatial-level-transforms
 
             # Transforms
             T = [
@@ -890,8 +935,14 @@ class Albumentations:
                 A.RandomGamma(p=0.0),
                 A.ImageCompression(quality_lower=75, p=0.0),
             ]
-            self.transform = A.Compose(T, bbox_params=A.BboxParams(format="yolo", label_fields=["class_labels"]))
 
+            # Compose transforms
+            self.contains_spatial = any(transform.__class__.__name__ in spatial_transforms for transform in T)
+            self.transform = (
+                A.Compose(T, bbox_params=A.BboxParams(format="yolo", label_fields=["class_labels"]))
+                if self.contains_spatial
+                else A.Compose(T)
+            )
             LOGGER.info(prefix + ", ".join(f"{x}".replace("always_apply=False, ", "") for x in T if x.p))
         except ImportError:  # package not installed, skip
             pass
@@ -900,24 +951,29 @@ class Albumentations:
 
     def __call__(self, labels):
         """Generates object detections and returns a dictionary with detection results."""
-        im = labels["img"]
-        cls = labels["cls"]
-        if len(cls):
-            labels["instances"].convert_bbox("xywh")
-            labels["instances"].normalize(*im.shape[:2][::-1])
-            bboxes = labels["instances"].bboxes
-            # TODO: add supports of segments and keypoints
-            if self.transform and random.random() < self.p:
+        if self.transform is None or random.random() > self.p:
+            return labels
+
+        if self.contains_spatial:
+            cls = labels["cls"]
+            if len(cls):
+                im = labels["img"]
+                labels["instances"].convert_bbox("xywh")
+                labels["instances"].normalize(*im.shape[:2][::-1])
+                bboxes = labels["instances"].bboxes
+                # TODO: add supports of segments and keypoints
                 new = self.transform(image=im, bboxes=bboxes, class_labels=cls)  # transformed
                 if len(new["class_labels"]) > 0:  # skip update if no bbox in new im
                     labels["img"] = new["image"]
                     labels["cls"] = np.array(new["class_labels"])
                     bboxes = np.array(new["bboxes"], dtype=np.float32)
-            labels["instances"].update(bboxes=bboxes)
+                labels["instances"].update(bboxes=bboxes)
+        else:
+            labels["img"] = self.transform(image=labels["img"])["image"]  # transformed
+
         return labels
 
 
-# TODO: technically this is not an augmentation, maybe we should put this to another files
 class Format:
     """
     Formats image annotations for object detection, instance segmentation, and pose estimation tasks. The class
@@ -976,17 +1032,22 @@ class Format:
                     1 if self.mask_overlap else nl, img.shape[0] // self.mask_ratio, img.shape[1] // self.mask_ratio
                 )
             labels["masks"] = masks
-        if self.normalize:
-            instances.normalize(w, h)
         labels["img"] = self._format_img(img)
         labels["cls"] = torch.from_numpy(cls) if nl else torch.zeros(nl)
         labels["bboxes"] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
         if self.return_keypoint:
             labels["keypoints"] = torch.from_numpy(instances.keypoints)
+            if self.normalize:
+                labels["keypoints"][..., 0] /= w
+                labels["keypoints"][..., 1] /= h
         if self.return_obb:
             labels["bboxes"] = (
                 xyxyxyxy2xywhr(torch.from_numpy(instances.segments)) if len(instances.segments) else torch.zeros((0, 5))
             )
+        # NOTE: need to normalize obb in xywhr format for width-height consistency
+        if self.normalize:
+            labels["bboxes"][:, [0, 2]] /= w
+            labels["bboxes"][:, [1, 3]] /= h
         # Then we can use collate_fn
         if self.batch_idx:
             labels["batch_idx"] = torch.zeros(nl)
@@ -1054,10 +1115,7 @@ class RandomLoadText:
             pos_labels = set(random.sample(pos_labels, k=self.max_samples))
 
         neg_samples = min(min(num_classes, self.max_samples) - len(pos_labels), random.randint(*self.neg_samples))
-        neg_labels = []
-        for i in range(num_classes):
-            if i not in pos_labels:
-                neg_labels.append(i)
+        neg_labels = [i for i in range(num_classes) if i not in pos_labels]
         neg_labels = random.sample(neg_labels, k=neg_samples)
 
         sampled_labels = pos_labels + neg_labels
@@ -1134,8 +1192,8 @@ def classify_transforms(
     size=224,
     mean=DEFAULT_MEAN,
     std=DEFAULT_STD,
-    interpolation: T.InterpolationMode = T.InterpolationMode.BILINEAR,
-    crop_fraction: float = DEFAULT_CROP_FTACTION,
+    interpolation=Image.BILINEAR,
+    crop_fraction: float = DEFAULT_CROP_FRACTION,
 ):
     """
     Classification transforms for evaluation/inference. Inspired by timm/data/transforms_factory.py.
@@ -1150,31 +1208,29 @@ def classify_transforms(
     Returns:
         (T.Compose): torchvision transforms
     """
+    import torchvision.transforms as T  # scope for faster 'import ultralytics'
 
     if isinstance(size, (tuple, list)):
-        assert len(size) == 2
+        assert len(size) == 2, f"'size' tuples must be length 2, not length {len(size)}"
         scale_size = tuple(math.floor(x / crop_fraction) for x in size)
     else:
         scale_size = math.floor(size / crop_fraction)
         scale_size = (scale_size, scale_size)
 
-    # aspect ratio is preserved, crops center within image, no borders are added, image is lost
+    # Aspect ratio is preserved, crops center within image, no borders are added, image is lost
     if scale_size[0] == scale_size[1]:
-        # simple case, use torchvision built-in Resize w/ shortest edge mode (scalar size arg)
+        # Simple case, use torchvision built-in Resize with the shortest edge mode (scalar size arg)
         tfl = [T.Resize(scale_size[0], interpolation=interpolation)]
     else:
-        # resize shortest edge to matching target dim for non-square target
+        # Resize the shortest edge to matching target dim for non-square target
         tfl = [T.Resize(scale_size)]
-    tfl += [T.CenterCrop(size)]
-
-    tfl += [
-        T.ToTensor(),
-        T.Normalize(
-            mean=torch.tensor(mean),
-            std=torch.tensor(std),
-        ),
-    ]
-
+    tfl.extend(
+        [
+            T.CenterCrop(size),
+            T.ToTensor(),
+            T.Normalize(mean=torch.tensor(mean), std=torch.tensor(std)),
+        ]
+    )
     return T.Compose(tfl)
 
 
@@ -1193,7 +1249,7 @@ def classify_augmentations(
     hsv_v=0.4,  # image HSV-Value augmentation (fraction)
     force_color_jitter=False,
     erasing=0.0,
-    interpolation: T.InterpolationMode = T.InterpolationMode.BILINEAR,
+    interpolation=Image.BILINEAR,
 ):
     """
     Classification transforms with augmentation for training. Inspired by timm/data/transforms_factory.py.
@@ -1217,40 +1273,42 @@ def classify_augmentations(
     Returns:
         (T.Compose): torchvision transforms
     """
-    # Transforms to apply if albumentations not installed
+    # Transforms to apply if Albumentations not installed
+    import torchvision.transforms as T  # scope for faster 'import ultralytics'
+
     if not isinstance(size, int):
         raise TypeError(f"classify_transforms() size {size} must be integer, not (list, tuple)")
     scale = tuple(scale or (0.08, 1.0))  # default imagenet scale range
     ratio = tuple(ratio or (3.0 / 4.0, 4.0 / 3.0))  # default imagenet ratio range
     primary_tfl = [T.RandomResizedCrop(size, scale=scale, ratio=ratio, interpolation=interpolation)]
     if hflip > 0.0:
-        primary_tfl += [T.RandomHorizontalFlip(p=hflip)]
+        primary_tfl.append(T.RandomHorizontalFlip(p=hflip))
     if vflip > 0.0:
-        primary_tfl += [T.RandomVerticalFlip(p=vflip)]
+        primary_tfl.append(T.RandomVerticalFlip(p=vflip))
 
     secondary_tfl = []
     disable_color_jitter = False
     if auto_augment:
-        assert isinstance(auto_augment, str)
+        assert isinstance(auto_augment, str), f"Provided argument should be string, but got type {type(auto_augment)}"
         # color jitter is typically disabled if AA/RA on,
         # this allows override without breaking old hparm cfgs
         disable_color_jitter = not force_color_jitter
 
         if auto_augment == "randaugment":
             if TORCHVISION_0_11:
-                secondary_tfl += [T.RandAugment(interpolation=interpolation)]
+                secondary_tfl.append(T.RandAugment(interpolation=interpolation))
             else:
                 LOGGER.warning('"auto_augment=randaugment" requires torchvision >= 0.11.0. Disabling it.')
 
         elif auto_augment == "augmix":
             if TORCHVISION_0_13:
-                secondary_tfl += [T.AugMix(interpolation=interpolation)]
+                secondary_tfl.append(T.AugMix(interpolation=interpolation))
             else:
                 LOGGER.warning('"auto_augment=augmix" requires torchvision >= 0.13.0. Disabling it.')
 
         elif auto_augment == "autoaugment":
             if TORCHVISION_0_10:
-                secondary_tfl += [T.AutoAugment(interpolation=interpolation)]
+                secondary_tfl.append(T.AutoAugment(interpolation=interpolation))
             else:
                 LOGGER.warning('"auto_augment=autoaugment" requires torchvision >= 0.10.0. Disabling it.')
 
@@ -1261,7 +1319,7 @@ def classify_augmentations(
             )
 
     if not disable_color_jitter:
-        secondary_tfl += [T.ColorJitter(brightness=hsv_v, contrast=hsv_v, saturation=hsv_s, hue=hsv_h)]
+        secondary_tfl.append(T.ColorJitter(brightness=hsv_v, contrast=hsv_v, saturation=hsv_s, hue=hsv_h))
 
     final_tfl = [
         T.ToTensor(),
