@@ -382,7 +382,7 @@ def val(cfg=DEFAULT_CFG, use_python=False):
 if __name__ == '__main__':
     from ultralytics.models.yolo.multispectral import MultispectralDetectionValidator
 
-    args = dict(mode='val', model='../../../cfg/models/v8/yolov8l-TwoStream.yaml',
+    args = dict(mode='val', model='../../../cfg/models/v8/yolov8l-C2f_RepVit-CSFusion.yaml',
                 data='../../../cfg/datasets/LLVIP.yaml')
     validator = MultispectralDetectionValidator(args=args)
     validator()

@@ -7,8 +7,8 @@
 
 
 # train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
-train: [D:\DataSets\LLVIP\train-visible.txt,D:\DataSets\LLVIP\train-infrared.txt]
-val: [D:\DataSets\LLVIP\val-visible.txt,D:\DataSets\LLVIP\val-infrared.txt]
+train: [E:\DataSets\LLVIP\train-visible.txt,E:\DataSets\LLVIP\train-infrared.txt]
+val: [E:\DataSets\LLVIP\val-visible.txt,E:\DataSets\LLVIP\val-infrared.txt]
 test:  # test images (optional)
 # number of classes
 nc: 1

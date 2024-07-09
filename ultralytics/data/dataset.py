@@ -518,39 +518,6 @@ class ClassificationDataset:
         save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
         return samples
 
-
-class YOLOMultiModalDataset(YOLODataset):
-    """
-    Dataset class for loading object detection and/or segmentation labels in YOLO format.
-
-    Args:
-        data (dict, optional): A dataset YAML dictionary. Defaults to None.
-        task (str): An explicit arg to point current task, Defaults to 'detect'.
-
-    Returns:
-        (torch.utils.data.Dataset): A PyTorch dataset object that can be used for training an object detection model.
-    """
-
-    def __init__(self, *args, data=None, task="detect", **kwargs):
-        """Initializes a dataset object for object detection tasks with optional specifications."""
-        super().__init__(*args, data=data, task=task, **kwargs)
-
-    def update_labels_info(self, label):
-        """Add texts information for multi modal model training."""
-        labels = super().update_labels_info(label)
-        # NOTE: some categories are concatenated with its synonyms by `/`.
-        labels["texts"] = [v.split("/") for _, v in self.data["names"].items()]
-        return labels
-
-    def build_transforms(self, hyp=None):
-        """Enhances data transformations with optional text augmentation for multi-modal training."""
-        transforms = super().build_transforms(hyp)
-        if self.augment:
-            # NOTE: hard-coded the args for now.
-            transforms.insert(-1, RandomLoadText(max_samples=min(self.data["nc"], 80), padding=True))
-        return transforms
-
-
 class GroundingDataset(YOLODataset):
     def __init__(self, *args, task="detect", json_file, **kwargs):
         """Initializes a GroundingDataset for object detection, loading annotations from a specified JSON file."""
