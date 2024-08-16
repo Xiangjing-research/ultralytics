@@ -229,7 +229,10 @@ class Exporter:
                 f"Using default 'data={self.args.data}'."
             )
         # Input
-        im = torch.zeros(self.args.batch, 3, *self.imgsz).to(self.device)
+        ch = 3
+        if self.args.task in ['multispectral']:
+            ch = 6
+        im = torch.zeros(self.args.batch, ch, *self.imgsz).to(self.device)
         file = Path(
             getattr(model, "pt_path", None) or getattr(model, "yaml_file", None) or model.yaml.get("yaml_file", "")
         )

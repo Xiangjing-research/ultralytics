@@ -3,6 +3,11 @@
 <summary><h2>网络结构图</h2></summary>
 <img src="image\net2.png"  width="964" height="776">
 
+<h3>DFMDA结构图</h3>
+<img src="image\DFMDA.png" width="548" height="261" >
+
+<h3>多头空洞注意力</h3>
+<img src="image\MHDWA2.png" width="362" height="440">
 
 <summary><h2>安装</h2></summary>
 

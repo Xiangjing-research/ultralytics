@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch import nn
 
 from ultralytics.data import build_dataloader, build_yolo_dataset, converter
 from ultralytics.engine.validator import BaseValidator
@@ -337,11 +338,51 @@ def val(cfg=DEFAULT_CFG, use_python=False):
         validator(model=args['model'])
 
 
+def sparsity(model):
+    # Return global model sparsity
+    # a用来统计使用的神经元的个数, 也就是参数量个数
+    # b用来统计没有使用到的神经元个数, 也就是参数为0的个数
+    a, b = 0., 0.
+    for p in model.parameters():
+        a += p.numel()        # numel()返回数组A中元素的数量
+        b += (p == 0).sum()   # 参数为0 表示没有使用到这个神经元参数
+    # b / a 即可以反应模型的稀疏程度
+    return b / a
+
+
+def sparsity(model):
+    # Return global model sparsity
+    # a用来统计使用的神经元的个数, 也就是参数量个数
+    # b用来统计没有使用到的神经元个数, 也就是参数为0的个数
+    a, b = 0., 0.
+    for p in model.parameters():
+        a += p.numel()  # numel()返回数组A中元素的数量
+        b += (p == 0).sum()  # 参数为0 表示没有使用到这个神经元参数
+    # b / a 即可以反应模型的稀疏程度
+    return b / a
+
+def prune(model, amount=0.3):
+    # Prune model to requested global sparsity
+    import torch.nn.utils.prune as prune
+    print('Pruning model... ', end='')
+    # 对模型中的nn.Conv2d参数进行修剪
+    for name, m in model.named_modules():
+        if isinstance(m, nn.Conv2d):
+            # 这里会对模块原来的weight构建两个缓存去, 一个是weight_orig(原参数), 另外一个是weight_mask(原参数的掩码)
+            # weight_mask掩码参数有0/1构成, 1表示当前神经元不修剪, 0表示修剪当前神经元
+            prune.l1_unstructured(m, name='weight', amount=amount)  # prune
+            # 将name+'_orig'与name+'_mask'从参数列表中删除, 也就是将掩码mask作用于原参数上
+            # 使name保持永久修剪, 同时去除参数的前向传播钩子(就是不需要前向传播)
+            prune.remove(m, 'weight')  # make permanent
+
+    # 测试模型的稀疏性
+    print(' %.3g global sparsity' % sparsity(model))
+
 if __name__ == '__main__':
 
-    from ultralytics import YOLO
+    # from ultralytics import YOLO
 
-    yolo = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_RefConv.yaml', task='detect')
+    # yolo = YOLO(model='../../../cfg/models/v8/yolov8l-C2f_FasterNet-DFMDA-2.yaml', task='detect')
     # c2f = C2f(c1=128, c2=128, shortcut=True)
     # c2f = C2f_GhostNetV2(c1=128, c2=128, shortcut=True)
     # c2f.cuda()
@@ -353,3 +394,20 @@ if __name__ == '__main__':
     # end = time.perf_counter()
     #
     # print("运行时间：", (end - start) * 1000, "毫秒")
+
+    from ultralytics import YOLO
+
+    # 加载模型
+    model = YOLO(task='detect',
+                 model='../../../cfg/models/v10/yolov10s.yaml')  # 从头开始构建新模型
+    print(model.info(detailed=True, verbose=True))
+    # model.export(format='onnx', opset=17, simplify=True)
+    # model.val(data = "coco.yaml", img=640, half=True)
+    # result = sparsity(model)
+    # print("prune before:{}".format(result))
+    # #
+    # prune(model)
+    # #
+    # result = sparsity(model)
+    # print("prune after:{}".format(result))
+    # print(model.info(detailed=True))

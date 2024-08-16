@@ -3,6 +3,7 @@ from typing import List
 
 import torch
 import torch.nn as nn
+from timm.layers import SqueezeExcite
 from torch.nn import functional as F
 
 __all__ = (
@@ -15,7 +16,6 @@ from ultralytics.nn.modules.df_msda import DFMSDABlock
 from timm.models.layers import DropPath
 from torch import Tensor
 
-from ultralytics.nn.modules.ghostnetv2_torch import SqueezeExcite
 from ultralytics.nn.modules.repvit import Conv2d_BN, Residual, RepVGGDW, _make_divisible
 
 
@@ -481,7 +481,7 @@ class RepViTBlock(nn.Module):
             # RepViTBlock
             self.token_mixer = nn.Sequential(
                 Conv2d_BN(inp, inp, kernel_size, stride, (kernel_size - 1) // 2, groups=inp),
-                SqueezeExcite(inp, 0.25) if use_se else nn.Identity(),
+                # SqueezeExcite(inp, 0.25) if use_se else nn.Identity(),
                 Conv2d_BN(inp, oup, ks=1, stride=1, pad=0)
             )
             # FFN
